@@ -32,7 +32,7 @@ function parseComment(x,now){
     typeof x.body!=='string' || x.body.length>256 ||
     typeof x.created_at!=='string')return null;
   const at=Date.parse(x.created_at);
-  if(!Number.isFinite(at)||at<0||at>now+60_000)return null;
+  if(!Number.isFinite(at)||at<0||at>8.64e15||at>now+60_000)return null;
   const g=GRANT.exec(x.body),r=REVOKE.exec(x.body);
   if(!g&&!r)return null;
   const parts=g||r,epoch=Number(parts[2]);
