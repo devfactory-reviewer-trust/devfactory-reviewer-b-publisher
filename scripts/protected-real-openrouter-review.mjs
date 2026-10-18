@@ -5,6 +5,7 @@
  */
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
+import {classifyOpenRouterSafeFailure} from './openrouter-safe-failure-diagnostic.mjs';
 import {approvedReadOnlyExecutionContext} from './protected-private-read-entrypoint.mjs';
 import {createReviewerBAppJwt,createScopedReviewerBInstallationToken}
  from '../candidate/github-app-auth.mjs';
@@ -140,8 +141,12 @@ export async function executeProtectedOpenRouterReview({
     model:cloud.model,parts:cloud.processedShardCount,
     providerCostUsd:cloud.apiCostReportedUsd,
     approvalAuthorized:false,independentReviewVerified:false,mayMerge:false});
- } catch {
-  // Public logs reveal only a fixed stage name, not dynamic private errors.
+ } catch(error) {
+  // Only constant allowlisted categories reach PUBLIC logs. Never log the
+  // error message/stack/cause, response body, provider data or private diff.
+  if(stage==='OPENROUTER')
+    console.log('OPENROUTER_PROTECTED_DIAGNOSTIC_'+
+      classifyOpenRouterSafeFailure(error));
   console.log('OPENROUTER_PROTECTED_'+stage+'_FAILED_CLOSED');
   return Object.freeze({ok:false,code:'CLOUD_'+stage+'_FAILED_CLOSED'});
  }
