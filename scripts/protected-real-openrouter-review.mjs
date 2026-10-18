@@ -17,6 +17,8 @@ import {OPENROUTER_MODEL_IDS}
  from './openrouter-zdr-executor.mjs';
 import {executeCompleteOpenRouterSemanticReview}
  from './openrouter-semantic-full-review.mjs';
+import {assessAuthenticatedSharedBudgetReservation}
+ from './authenticated-shared-budget-reservation.mjs';
 import {prepareOpenRouterNativeComment}
  from './openrouter-native-report.mjs';
 import {fetchAndVerifyOwnerCloudConsent}
@@ -93,13 +95,24 @@ export async function executeProtectedOpenRouterReview({
   });
   if(!consent.ok||consent.globalMonthlyBudgetEur!==15)
     deny('CLOUD_OWNER_SPEND_OR_EGRESS_NOT_PROVEN');
+  // Owner consent is separate from authenticated RunPod+OpenRouter spend.
+  // This shared EUR15 atomic reservation is not implemented. Block BEFORE
+  // billable POST; never elevate consent to global ledger proof.
+  stage='SHARED_BUDGET';
+  const budget=assessAuthenticatedSharedBudgetReservation({
+    prNumber:issuePr,headSha:preflight.target.headSha,
+    model:env.REVIEWER_B_OPENROUTER_MODEL,
+    consentVerified:consent.ok,now
+  });
+  if(budget?.verified!==true||budget?.maySpend!==true)
+    deny('CLOUD_SHARED_BUDGET_ATOMIC_RESERVATION_NOT_PROVEN');
   stage='OPENROUTER';
   const cloud=await executeCompleteOpenRouterSemanticReview({
    plan:preflight.privateSemanticPlan,runId,
    model:env.REVIEWER_B_OPENROUTER_MODEL,
    apiKey:env.REVIEWER_B_OPENROUTER_API_KEY,
    approvedThirdPartyPrivateEgress:true,
-   authenticatedGlobalBudgetVerified:true,
+   authenticatedGlobalBudgetVerified:budget.verified&&budget.maySpend,
    fetchImpl:cloudFetchImpl,maxOutputTokens:1024,concurrency:3
   });
   stage='REPORT';
