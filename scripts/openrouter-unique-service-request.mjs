@@ -8,7 +8,7 @@ const URL_BASE='https://api.github.com/repos/devfactory-reviewer-trust/devfactor
 const SERVICE='devfactory-reviewer-service',SERVICE_ID=340477389;
 const CMD=/^\/review-b-openrouter ([1-9][0-9]{0,9}) ([0-9a-f]{40}) (qwen\/qwen3-coder-30b-a3b-instruct|qwen\/qwen3\.6-35b-a3b)$/;
 const SHA=/^[a-f0-9]{40}$/;
-const MAX_PAGES=20, PAGE_SIZE=100, MAX_BYTES=128*1024;
+const MAX_PAGES=20, PAGE_SIZE=100, MAX_BYTES=512*1024;
 const deny=()=>{throw Error('OR_UNIQUE_SERVICE_REQUEST_NOT_PROVEN')};
 const ALLOWED_ISSUE_PATHS=Object.freeze([
  '/repos/devfactory-reviewer-trust/devfactory-reviewer-b-publisher/issues/62/comments',

@@ -197,3 +197,29 @@ test('pagination refuses wrong host, repo, page, parameters or userinfo',async()
   assert.equal(called,1);
  }
 });
+
+test('full 100-comment GitHub API page larger than 128 KiB succeeds but 512 KiB remains hard cap',async()=>{
+ const items=Array.from({length:100},(_,i)=>({
+  id:30000+i,user:{login:'visitor',id:20},body:'a'.repeat(2200)
+ }));
+ items[0]=item();
+ let calls=0;
+ const fetchImpl=async url=>{
+  calls++;
+  const current=Number(new URL(url).searchParams.get('page'));
+  const body=JSON.stringify(current===1?items:[{id:911,user:{login:'visitor',id:20},body:'end'}]);
+  return {status:200,redirected:false,url,
+   headers:{get:k=>k==='content-type'?'application/json':k==='content-length'?String(Buffer.byteLength(body,'utf8')):
+     k==='link'&&current===1?'<'+uri.split('&page=')[0]+'&page=2>; rel="next"':null},
+   text:async()=>body};
+ };
+ const result=await fetchAndVerifyUniqueOpenRouterServiceRequest({...args,fetchImpl});
+ assert.equal(result.ok,true);
+ assert.equal(calls,2);
+ const oversized=JSON.stringify([{...item(),body:'b'.repeat(530000)}]);
+ await assert.rejects(()=>fetchAndVerifyUniqueOpenRouterServiceRequest({...args,
+  fetchImpl:async url=>({status:200,redirected:false,url,
+    headers:{get:k=>k==='content-type'?'application/json':k==='content-length'?
+      String(Buffer.byteLength(oversized,'utf8')):null},text:async()=>oversized})
+ }),/OR_UNIQUE_SERVICE_REQUEST_NOT_PROVEN/);
+});
