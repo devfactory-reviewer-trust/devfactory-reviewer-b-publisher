@@ -211,6 +211,7 @@ export async function executeOpenRouterShard({
  // Never log or return raw provider content, model output, IDs or tokens.
  const choice=json?.choices?.[0];
  if(!Array.isArray(json?.choices)||json.choices.length!==1||
+    !choice||typeof choice!=='object'||Array.isArray(choice)||
     json.model!==model)
     deny('OR_COMPLETION_ENVELOPE_UNVERIFIED');
  if(choice?.finish_reason!=='stop')

@@ -28,7 +28,7 @@ The old response guard rejected any of the following as a single
 of those negative predicates in the same sequence, but separates four
 internal, **static** failure categories:
 
-- `PROVIDER_ENVELOPE` — model mismatch, missing/extra choices.
+- `PROVIDER_ENVELOPE` — model mismatch, missing/extra choices, null or non-object choice.
 - `PROVIDER_FINISH` — finish reason anything other than exact `stop`.
 - `PROVIDER_MESSAGE` — non-assistant, refusal, tools, non-string content.
 - `PROVIDER_USAGE` — missing/invalid token accounting, completion budget,

@@ -307,6 +307,10 @@ test('invalid accounting, envelope and oversized token usage remain rejected',as
   usage:{prompt_tokens:1101,completion_tokens:557,cost:0.000233}};
  const cases=[
   [{...base,choices:[]},'OR_COMPLETION_ENVELOPE_UNVERIFIED'],
+  [{...base,choices:[null]},'OR_COMPLETION_ENVELOPE_UNVERIFIED'],
+  [{...base,choices:[42]},'OR_COMPLETION_ENVELOPE_UNVERIFIED'],
+  [{...base,choices:['malformed']},'OR_COMPLETION_ENVELOPE_UNVERIFIED'],
+  [{...base,choices:[[]]},'OR_COMPLETION_ENVELOPE_UNVERIFIED'],
   [{...base,model:'another-model'},'OR_COMPLETION_ENVELOPE_UNVERIFIED'],
   [{...base,usage:undefined},'OR_COMPLETION_USAGE_UNVERIFIED'],
   [{...base,usage:null},'OR_COMPLETION_USAGE_UNVERIFIED'],
