@@ -92,3 +92,58 @@ test('paid entrypoint and workflow wire exactly the first-attempt evidence',()=>
  assert.match(workflow,/REVIEWER_B_REQUEST_COMMENT_ID:\s*\$\{\{ steps\.cloud_request\.outputs\.request_comment_id \}\}/);
  assert.doesNotMatch(workflow,/\b(?:pull_request|pull_request_target|schedule)\s*:/);
 });
+
+test('complete bounded GitHub pagination proves uniqueness after 100 comments',async()=>{
+ const page1=Array.from({length:100},(_,i)=>({
+  id:2000+i,user:{login:'public-user',id:9},body:'unrelated'
+ }));
+ page1[30]=item();
+ let pages=0;
+ const fetchImpl=async (url,opts)=>{
+  assert.equal(opts.method,'GET');
+  const n=Number(new URL(url).searchParams.get('page'));
+  pages++;
+  const entries=n===1?page1:[{id:9000,user:{login:'other',id:5},body:'hi'}];
+  const link=n===1?'<'+uri.split('&page=')[0]+'&page=2'+'>; rel = "NEXT"':null;
+  return {status:200,redirected:false,url,
+   headers:{get:k=>k==='content-type'?'application/json':k==='link'?link:null},
+   text:async()=>JSON.stringify(entries)};
+ };
+ const result=await fetchAndVerifyUniqueOpenRouterServiceRequest({...args,fetchImpl});
+ assert.equal(result.ok,true);
+ assert.equal(result.maySpend,false);
+ assert.equal(pages,2);
+});
+test('second-page duplicate command denies a possible repeated charge',async()=>{
+ const page1=Array.from({length:100},(_,i)=>({
+  id:2000+i,user:{login:'public-user',id:9},body:'unrelated'
+ }));
+ page1[20]=item();
+ const fetchImpl=async url=>{
+  const n=Number(new URL(url).searchParams.get('page'));
+  return {status:200,redirected:false,url,
+   headers:{get:k=>k==='content-type'?'application/json':k==='link'&&n===1?
+    '<'+uri.split('&page=')[0]+'&page=2'+'>; rel="next"':null},
+   text:async()=>JSON.stringify(n===1?page1:[item(56)])};
+ };
+ await assert.rejects(()=>fetchAndVerifyUniqueOpenRouterServiceRequest({
+  ...args,fetchImpl}),/OR_UNIQUE_SERVICE_REQUEST_NOT_PROVEN/);
+});
+test('pagination stops at its bounded 20-page limit and never loops',async()=>{
+ let calls=0;
+ const page=Array.from({length:100},(_,i)=>({
+  id:200+i,user:{login:'not-service',id:1},body:'irrelevant'
+ }));
+ page[0]=item();
+ const fetchImpl=async url=>{
+  calls++;
+  const n=Number(new URL(url).searchParams.get('page'));
+  return {status:200,redirected:false,url,
+   headers:{get:k=>k==='content-type'?'application/json':k==='link'?
+    '<'+uri.split('&page=')[0]+'&page='+(n+1)+'>; rel="next"':null},
+   text:async()=>JSON.stringify(page)};
+ };
+ await assert.rejects(()=>fetchAndVerifyUniqueOpenRouterServiceRequest({
+  ...args,fetchImpl}),/OR_UNIQUE_SERVICE_REQUEST_NOT_PROVEN/);
+ assert.equal(calls,20);
+});
