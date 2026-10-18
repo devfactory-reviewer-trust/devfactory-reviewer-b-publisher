@@ -6,6 +6,10 @@ Publisher main at start: `7f121829c77aea075dc75e697682df5c9d8b4e7a`.
 ## One request, one first attempt
 
 The authenticated service's issue #62 message is bound to exact PR/HEAD/model.
+Public GitHub pagination is finite (at most 20 pages of 100 comments), accepts
+only this exact repository by its name-based or canonical numeric REST path,
+and requires the precise next page and per_page=100. Other origins or paths
+are never fetched. Incomplete, inconsistent or excessive history is blocked.
 The protected worker now also receives the validated **comment ID** and
 accepts only `issue_comment`, `GITHUB_RUN_ATTEMPT=1`. It verifies a
 single exact authentic service command across the bounded public issue

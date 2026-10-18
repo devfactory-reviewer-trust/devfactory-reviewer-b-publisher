@@ -10,6 +10,23 @@ const CMD=/^\/review-b-openrouter ([1-9][0-9]{0,9}) ([0-9a-f]{40}) (qwen\/qwen3-
 const SHA=/^[a-f0-9]{40}$/;
 const MAX_PAGES=20, PAGE_SIZE=100, MAX_BYTES=128*1024;
 const deny=()=>{throw Error('OR_UNIQUE_SERVICE_REQUEST_NOT_PROVEN')};
+const ALLOWED_ISSUE_PATHS=Object.freeze([
+ '/repos/devfactory-reviewer-trust/devfactory-reviewer-b-publisher/issues/62/comments',
+ '/repositories/1412898356/issues/62/comments',
+]);
+function allowedNextPageLink(raw,page){
+ try{
+  const u=new URL(raw);
+  return u.origin==='https://api.github.com'&&
+   u.username===''&&u.password===''&&u.hash===''&&
+   ALLOWED_ISSUE_PATHS.includes(u.pathname)&&
+   u.searchParams.size===2&&
+   u.searchParams.getAll('page').length===1&&
+   u.searchParams.getAll('per_page').length===1&&
+   u.searchParams.get('page')===String(page+1)&&
+   u.searchParams.get('per_page')==='100';
+ }catch{return false}
+}
 
 export function assessUniqueOpenRouterServiceRequest({
  eventName,runAttempt,prNumber,headSha,model,commentId,comments
@@ -69,13 +86,16 @@ export async function fetchAndVerifyUniqueOpenRouterServiceRequest({
   all.push(...items);
   const link=r.headers.get('link')||'';
   if(typeof link!=='string'||link.length>8192)deny();
-  // Parse Link rel=next, allowing whitespace/case variants. Trust only our
-  // exact next-page URL; never fetch an URL supplied by an HTTP response.
-  const hasNext=/\brel\s*=\s*"?next"?\b/i.test(link);
-  if(!hasNext){complete=true;break;}
+  // GitHub Link can use repo name or canonical numeric repo ID. Parse
+  // both strict same-repo URLs and only the exact NEXT page; no redirects
+  // and never fetch a server-supplied URL directly.
+  const mentionsNext=/\brel\s*=\s*"?next\b/i.test(link);
   const next=link.split(',').map(s=>s.trim()).filter(s=>
-      /;\s*rel\s*=\s*"?next"?\s*$/i.test(s));
-  if(next.length!==1||next[0].match(/<([^<>]+)>/)?.[1]!==URL_BASE+(page+1)||
+    /;\s*rel\s*=\s*"?next"?(?=\s*(?:;|$))/i.test(s));
+  if(mentionsNext!==Boolean(next.length))deny();
+  if(!mentionsNext){complete=true;break;}
+  const nextUrl=next[0]?.match(/<([^<>]+)>/)?.[1];
+  if(next.length!==1||!allowedNextPageLink(nextUrl,page)||
      page===MAX_PAGES||items.length!==PAGE_SIZE)deny();
  }
  if(!complete)deny();

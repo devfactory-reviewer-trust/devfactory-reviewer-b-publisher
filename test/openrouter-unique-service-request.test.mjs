@@ -147,3 +147,53 @@ test('pagination stops at its bounded 20-page limit and never loops',async()=>{
   ...args,fetchImpl}),/OR_UNIQUE_SERVICE_REQUEST_NOT_PROVEN/);
  assert.equal(calls,20);
 });
+
+test('GitHub canonical numeric-repository Link and normalized query order work safely',async()=>{
+ const page1=Array.from({length:100},(_,i)=>({
+  id:6000+i,user:{login:'public-visitor',id:9},body:'old comment'
+ }));
+ page1[3]=item();
+ let reads=0;
+ const fetchImpl=async url=>{
+  reads++;
+  const pg=Number(new URL(url).searchParams.get('page'));
+  const link=pg===1?
+   '<https://api.github.com/repositories/1412898356/issues/62/comments?page=2&per_page=100>; type="application/json"; rel = "NEXT"':null;
+  return {status:200,redirected:false,url,
+   headers:{get:key=>key==='content-type'?'application/json':key==='link'?link:null},
+   text:async()=>JSON.stringify(pg===1?page1:[{id:9999,user:{login:'other',id:3},body:'hi'}])};
+ };
+ const result=await fetchAndVerifyUniqueOpenRouterServiceRequest({...args,fetchImpl});
+ assert.equal(result.ok,true);
+ assert.equal(reads,2);
+ assert.equal(result.maySpend,false);
+});
+test('pagination refuses wrong host, repo, page, parameters or userinfo',async()=>{
+ const page1=Array.from({length:100},(_,i)=>({
+  id:1000+i,user:{login:'public-visitor',id:9},body:'hi'
+ }));
+ page1[2]=item();
+ const variants=[
+  'https://attacker.invalid/repositories/1412898356/issues/62/comments?page=2&per_page=100',
+  'https://api.github.com/repositories/1412898357/issues/62/comments?page=2&per_page=100',
+  'https://api.github.com/repositories/1412898356/issues/63/comments?page=2&per_page=100',
+  'https://api.github.com/repositories/1412898356/issues/62/comments?page=3&per_page=100',
+  'https://api.github.com/repositories/1412898356/issues/62/comments?page=2&per_page=99',
+  'https://api.github.com/repositories/1412898356/issues/62/comments?page=2&page=2&per_page=100',
+  'https://user@api.github.com/repositories/1412898356/issues/62/comments?page=2&per_page=100',
+  'https://api.github.com/repositories/1412898356/issues/62/comments?page=2&per_page=100#fragment',
+ ];
+ for(const next of variants){
+  let called=0;
+  const fetchImpl=async url=>{
+   called++;
+   return {status:200,redirected:false,url,
+    headers:{get:k=>k==='content-type'?'application/json':k==='link'?
+     '<'+next+'>; rel="next"':null},
+    text:async()=>JSON.stringify(page1)};
+  };
+  await assert.rejects(()=>fetchAndVerifyUniqueOpenRouterServiceRequest({
+   ...args,fetchImpl}),/OR_UNIQUE_SERVICE_REQUEST_NOT_PROVEN/);
+  assert.equal(called,1);
+ }
+});
