@@ -12,6 +12,9 @@ const OWNER = Object.freeze({login:'deenkids7-dev',id:297379913});
 const REPO = 'deenkids7-dev/deenkids';
 const MODEL = 'qwen/qwen3-coder-30b-a3b-instruct';
 const MONTH = /^20[2-9][0-9]-(?:0[1-9]|1[0-2])$/;
+// GitHub REST comment created_at is exactly UTC RFC3339 without fractions.
+// Bound the string before Date.parse to avoid pathological input costs.
+const CREATED_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 const GRANT = /^\/devfactory-openrouter-grant-v2 (20[2-9][0-9]-(?:0[1-9]|1[0-2])) epoch=([1-9][0-9]{0,8}) repo=deenkids7-dev\/deenkids model=qwen\/qwen3-coder-30b-a3b-instruct scope=diff-only zdr=true fallback=false budget=15eur$/;
 const REVOKE = /^\/devfactory-openrouter-revoke-v2 (20[2-9][0-9]-(?:0[1-9]|1[0-2])) epoch=([1-9][0-9]{0,8})$/;
 const B = Object.freeze({
@@ -30,7 +33,8 @@ const owner=x=>x?.user?.login===OWNER.login && x?.user?.id===OWNER.id;
 function parseComment(x,now){
   if(!owner(x) || !Number.isSafeInteger(x.id) || x.id<=0 ||
     typeof x.body!=='string' || x.body.length>256 ||
-    typeof x.created_at!=='string')return null;
+    typeof x.created_at!=='string' || x.created_at.length!==20 ||
+    !CREATED_AT.test(x.created_at))return null;
   const at=Date.parse(x.created_at);
   if(!Number.isFinite(at)||at<0||at>8.64e15||at>now+60_000)return null;
   const g=GRANT.exec(x.body),r=REVOKE.exec(x.body);

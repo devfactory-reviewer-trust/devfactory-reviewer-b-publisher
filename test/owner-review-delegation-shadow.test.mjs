@@ -113,6 +113,20 @@ test('R213 wrong or oversized epoch, scope, model and budget deny candidate',()=
   noAuthority(r);assert.equal(r.candidateGrantPresent,false,body);
  }
 });
+test('R213 created_at date shape rejects oversized and non-GitHub dates before parsing',()=>{
+ for(const created_at of [
+   'x'.repeat(200_000),
+   '2026-10-18T08:00:00.000Z',
+   '2026-10-18T08:00:00+00:00',
+   '2026-10-18T08:00:00Z'+('x'.repeat(100_000)),
+   'Sun, 18 Oct 2026 08:00:00 GMT',
+   'not-a-date',
+ ]){
+   const out=assess({...input(),githubComments:[grant(1,{created_at})]});
+   noAuthority(out);
+   assert.equal(out.candidateGrantPresent,false);
+ }
+});
 test('R213 extreme timestamps and invalid Date range fail closed without crashing',()=>{
  const edge=Date.parse('+275760-09-13T00:00:00.000Z');
  assert.equal(edge,8.64e15);
