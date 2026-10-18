@@ -101,6 +101,15 @@ test('R213 wrong or oversized epoch, scope, model and budget deny candidate',()=
   noAuthority(r);assert.equal(r.candidateGrantPresent,false,body);
  }
 });
+test('R213 extreme timestamps and invalid Date range fail closed without crashing',()=>{
+ const edge=Date.parse('+275760-09-13T00:00:00.000Z');
+ assert.equal(edge,8.64e15);
+ for(const nearNow of [edge-60_000,edge,8.64e15+1]){
+  const x={...input(),nowMs:nearNow,githubComments:[grant(1,{created_at:'+275760-09-13T00:00:00.000Z'})]};
+  const r=assess(x);noAuthority(r);
+  assert.equal(r.candidateGrantPresent,false);
+ }
+});
 test('R213 expired month cannot be reused in another month',()=>{
  for(const [month,now]of [
   ['2026-09',NOW],
