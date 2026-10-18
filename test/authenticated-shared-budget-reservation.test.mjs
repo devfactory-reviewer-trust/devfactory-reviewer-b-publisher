@@ -32,7 +32,7 @@ test('production protected entrypoint denies before opening OpenRouter network',
  const idxDeny=code.indexOf("deny('CLOUD_SHARED_BUDGET_ATOMIC_RESERVATION_NOT_PROVEN')");
  const idxProvider=code.indexOf('const cloud=await executeCompleteOpenRouterSemanticReview');
  assert.ok(idxConsent>=0&&idxConsent<idxGate&&idxGate<idxDeny&&idxDeny<idxProvider);
- assert.match(code,/budget\?\.verified!==true\|\|budget\?\.maySpend!==true/);
+ assert.match(code,/budget\.verified!==true\|\|budget\.maySpend!==true/);
  assert.match(code,/authenticatedGlobalBudgetVerified:budget\.verified&&budget\.maySpend/);
  assert.doesNotMatch(code,/authenticatedGlobalBudgetVerified:true/);
  assert.match(code,/stage='SHARED_BUDGET'/);

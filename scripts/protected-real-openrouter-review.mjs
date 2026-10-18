@@ -104,7 +104,7 @@ export async function executeProtectedOpenRouterReview({
     model:env.REVIEWER_B_OPENROUTER_MODEL,
     consentVerified:consent.ok,now
   });
-  if(budget?.verified!==true||budget?.maySpend!==true)
+  if(budget.verified!==true||budget.maySpend!==true)
     deny('CLOUD_SHARED_BUDGET_ATOMIC_RESERVATION_NOT_PROVEN');
   stage='OPENROUTER';
   const cloud=await executeCompleteOpenRouterSemanticReview({
