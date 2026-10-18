@@ -281,6 +281,7 @@ test('finish reason remains strictly stop; each alternative yields safe evidence
 
 test('non-assistant and refusal outputs fail without disclosing content',async()=>{
  for(const message of [
+  undefined, null,
   {role:'user',content:'{"summary":"ok","findings":[]}'},
   {role:'assistant',refusal:'PRIVATE_UNSAFE_DETAILS',content:''},
   {role:'assistant',tool_calls:[],content:'{"summary":"ok","findings":[]}'},
@@ -307,6 +308,8 @@ test('invalid accounting, envelope and oversized token usage remain rejected',as
  const cases=[
   [{...base,choices:[]},'OR_COMPLETION_ENVELOPE_UNVERIFIED'],
   [{...base,model:'another-model'},'OR_COMPLETION_ENVELOPE_UNVERIFIED'],
+  [{...base,usage:undefined},'OR_COMPLETION_USAGE_UNVERIFIED'],
+  [{...base,usage:null},'OR_COMPLETION_USAGE_UNVERIFIED'],
   [{...base,usage:{...base.usage,cost:null}},'OR_COMPLETION_USAGE_UNVERIFIED'],
   [{...base,usage:{...base.usage,cost:0.02}},'OR_COMPLETION_USAGE_UNVERIFIED'],
   [{...base,usage:{...base.usage,prompt_tokens:8192}},'OR_COMPLETION_USAGE_UNVERIFIED'],

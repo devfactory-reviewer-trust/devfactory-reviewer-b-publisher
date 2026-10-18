@@ -215,18 +215,19 @@ export async function executeOpenRouterShard({
     deny('OR_COMPLETION_ENVELOPE_UNVERIFIED');
  if(choice?.finish_reason!=='stop')
     deny('OR_COMPLETION_FINISH_NOT_STOP');
- if(choice?.message?.role!=='assistant'||choice.message.refusal!=null||
-    choice.message.tool_calls!=null||
-    typeof choice.message.content!=='string')
+ const message=choice?.message;
+ if(!message||message.role!=='assistant'||message.refusal!=null||
+    message.tool_calls!=null||typeof message.content!=='string')
     deny('OR_COMPLETION_MESSAGE_UNVERIFIED');
- if(!Number.isSafeInteger(json.usage?.prompt_tokens)||
-    json.usage.prompt_tokens<1||
-    !Number.isSafeInteger(json.usage?.completion_tokens)||
-    json.usage.completion_tokens<1||
-    json.usage.completion_tokens>maxOutputTokens||
-    json.usage.prompt_tokens+json.usage.completion_tokens+512>8192||
-    typeof json.usage?.cost!=='number'||!Number.isFinite(json.usage.cost)||
-    json.usage.cost<0||json.usage.cost>0.01)
+ const usage=json?.usage;
+ if(!usage||!Number.isSafeInteger(usage.prompt_tokens)||
+    usage.prompt_tokens<1||
+    !Number.isSafeInteger(usage.completion_tokens)||
+    usage.completion_tokens<1||
+    usage.completion_tokens>maxOutputTokens||
+    usage.prompt_tokens+usage.completion_tokens+512>8192||
+    typeof usage.cost!=='number'||!Number.isFinite(usage.cost)||
+    usage.cost<0||usage.cost>0.01)
     deny('OR_COMPLETION_USAGE_UNVERIFIED');
  // Normalize exactly the signed-diff anchors; this is NOT an Ollama claim.
  const normalized=validateOfflineOllamaCompletion({
