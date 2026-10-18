@@ -183,7 +183,7 @@ test('wrong model response not accepted as proof',async()=>{
   trustedDiffBytes:INPUT,runId:RUN,apiKey:K,preflight:p,
   approvedThirdPartyPrivateEgress:true,
   authenticatedGlobalBudgetVerified:true,fetchImpl:net.fetchImpl
- }),/OR_COMPLETION_OR_COST_UNVERIFIED/);
+ }),/OR_COMPLETION_ENVELOPE_UNVERIFIED/);
 });
 test('too expensive even if model content valid => fail closed',async()=>{
  const net=mockedNetwork({changedBody:{model:OPENROUTER_MODEL_IDS[0],
@@ -192,7 +192,7 @@ test('too expensive even if model content valid => fail closed',async()=>{
  const p=await preflightOpenRouterKey({apiKey:K,fetchImpl:net.fetchImpl});
  await assert.rejects(()=>executeOpenRouterShard({plan:makePlan(),trustedDiffBytes:INPUT,
   runId:RUN,apiKey:K,preflight:p,approvedThirdPartyPrivateEgress:true,
-  authenticatedGlobalBudgetVerified:true,fetchImpl:net.fetchImpl}),/COST_UNVERIFIED/);
+  authenticatedGlobalBudgetVerified:true,fetchImpl:net.fetchImpl}),/OR_COMPLETION_USAGE_UNVERIFIED/);
 });
 test('response refusal must not yield an accepted finding',async()=>{
  const net=mockedNetwork({refusal:'I refuse'});
@@ -260,4 +260,66 @@ test('entire pipeline fails closed on one shard error, no partial output',async(
   plan:makePlan(),runId:RUN,apiKey:K,approvedThirdPartyPrivateEgress:true,
   authenticatedGlobalBudgetVerified:true,fetchImpl:net.fetchImpl
  }),/OR_REQUEST_INTERRUPTED_NO_AUTORETRY/);
+});
+
+test('finish reason remains strictly stop; each alternative yields safe evidence only',async()=>{
+ for(const reason of [undefined,null,'length','error','content_filter','tool_calls']){
+  const body={model:OPENROUTER_MODEL_IDS[0],
+   choices:[{finish_reason:reason,message:{role:'assistant',content:'{"summary":"ok","findings":[]}'}}],
+   usage:{prompt_tokens:1101,completion_tokens:557,cost:0.000233}};
+  const net=mockedNetwork({changedBody:body});
+  const preflight=await preflightOpenRouterKey({apiKey:K,fetchImpl:net.fetchImpl});
+  await assert.rejects(()=>executeOpenRouterShard({
+   plan:makePlan(),trustedDiffBytes:INPUT,runId:RUN,apiKey:K,
+   preflight,approvedThirdPartyPrivateEgress:true,
+   authenticatedGlobalBudgetVerified:true,fetchImpl:net.fetchImpl
+  }),/OR_COMPLETION_FINISH_NOT_STOP/);
+  // Real providers may bill such a response. No built-in POST replay.
+  assert.equal(net.postCount(),1);
+ }
+});
+
+test('non-assistant and refusal outputs fail without disclosing content',async()=>{
+ for(const message of [
+  {role:'user',content:'{"summary":"ok","findings":[]}'},
+  {role:'assistant',refusal:'PRIVATE_UNSAFE_DETAILS',content:''},
+  {role:'assistant',tool_calls:[],content:'{"summary":"ok","findings":[]}'},
+  {role:'assistant',content:null},
+ ]){
+  const net=mockedNetwork({changedBody:{model:OPENROUTER_MODEL_IDS[0],
+   choices:[{finish_reason:'stop',message}],
+   usage:{prompt_tokens:900,completion_tokens:60,cost:0.00015}}});
+  const proof=await preflightOpenRouterKey({apiKey:K,fetchImpl:net.fetchImpl});
+  await assert.rejects(()=>executeOpenRouterShard({
+   plan:makePlan(),trustedDiffBytes:INPUT,runId:RUN,apiKey:K,
+   preflight:proof,approvedThirdPartyPrivateEgress:true,
+   authenticatedGlobalBudgetVerified:true,fetchImpl:net.fetchImpl
+  }),/OR_COMPLETION_MESSAGE_UNVERIFIED/);
+  assert.equal(net.postCount(),1);
+ }
+});
+
+test('invalid accounting, envelope and oversized token usage remain rejected',async()=>{
+ const base={model:OPENROUTER_MODEL_IDS[0],
+  choices:[{finish_reason:'stop',
+    message:{role:'assistant',content:'{"summary":"ok","findings":[]}'}}],
+  usage:{prompt_tokens:1101,completion_tokens:557,cost:0.000233}};
+ const cases=[
+  [{...base,choices:[]},'OR_COMPLETION_ENVELOPE_UNVERIFIED'],
+  [{...base,model:'another-model'},'OR_COMPLETION_ENVELOPE_UNVERIFIED'],
+  [{...base,usage:{...base.usage,cost:null}},'OR_COMPLETION_USAGE_UNVERIFIED'],
+  [{...base,usage:{...base.usage,cost:0.02}},'OR_COMPLETION_USAGE_UNVERIFIED'],
+  [{...base,usage:{...base.usage,prompt_tokens:8192}},'OR_COMPLETION_USAGE_UNVERIFIED'],
+  [{...base,usage:{...base.usage,completion_tokens:1025}},'OR_COMPLETION_USAGE_UNVERIFIED'],
+ ];
+ for(const [body,code] of cases){
+  const net=mockedNetwork({changedBody:body});
+  const proof=await preflightOpenRouterKey({apiKey:K,fetchImpl:net.fetchImpl});
+  await assert.rejects(()=>executeOpenRouterShard({
+   plan:makePlan(),trustedDiffBytes:INPUT,runId:RUN,apiKey:K,
+   preflight:proof,approvedThirdPartyPrivateEgress:true,
+   authenticatedGlobalBudgetVerified:true,fetchImpl:net.fetchImpl
+  }),new RegExp(code));
+  assert.equal(net.postCount(),1);
+ }
 });

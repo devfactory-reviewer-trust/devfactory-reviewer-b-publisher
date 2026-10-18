@@ -206,13 +206,20 @@ export async function executeOpenRouterShard({
  if(r?.headers?.get?.('x-openrouter-cache-status')?.toUpperCase()==='HIT')
    deny('OR_PRIVATE_RESPONSE_CACHE_FORBIDDEN');
  const {json,bytes}=await boundedJson(r,CHAT);
+ // Keep EXACTLY the existing fail-closed acceptance predicates, but
+ // distinguish each trusted internal rejection with a fixed error code.
+ // Never log or return raw provider content, model output, IDs or tokens.
  const choice=json?.choices?.[0];
  if(!Array.isArray(json?.choices)||json.choices.length!==1||
-    json.model!==model||choice?.finish_reason!=='stop'||
-    choice?.message?.role!=='assistant'||choice.message.refusal!=null||
+    json.model!==model)
+    deny('OR_COMPLETION_ENVELOPE_UNVERIFIED');
+ if(choice?.finish_reason!=='stop')
+    deny('OR_COMPLETION_FINISH_NOT_STOP');
+ if(choice?.message?.role!=='assistant'||choice.message.refusal!=null||
     choice.message.tool_calls!=null||
-    typeof choice.message.content!=='string'||
-    !Number.isSafeInteger(json.usage?.prompt_tokens)||
+    typeof choice.message.content!=='string')
+    deny('OR_COMPLETION_MESSAGE_UNVERIFIED');
+ if(!Number.isSafeInteger(json.usage?.prompt_tokens)||
     json.usage.prompt_tokens<1||
     !Number.isSafeInteger(json.usage?.completion_tokens)||
     json.usage.completion_tokens<1||
@@ -220,7 +227,7 @@ export async function executeOpenRouterShard({
     json.usage.prompt_tokens+json.usage.completion_tokens+512>8192||
     typeof json.usage?.cost!=='number'||!Number.isFinite(json.usage.cost)||
     json.usage.cost<0||json.usage.cost>0.01)
-    deny('OR_COMPLETION_OR_COST_UNVERIFIED');
+    deny('OR_COMPLETION_USAGE_UNVERIFIED');
  // Normalize exactly the signed-diff anchors; this is NOT an Ollama claim.
  const normalized=validateOfflineOllamaCompletion({
    response:{model:OLLAMA_VALIDATION_MODEL,done:true,done_reason:'stop',
