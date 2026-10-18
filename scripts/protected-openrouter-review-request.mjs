@@ -77,7 +77,9 @@ function main(){
    'pr_number='+result.prNumber+'\n'+
    'expected_head='+result.headSha+'\n'+
    'model='+result.model+'\n'+
-   'verified=true\n',{encoding:'utf8'});
+   'verified=true\n'+
+   'request_comment_id='+(event===null?'':event.comment.id)+'\n',
+   {encoding:'utf8'});
   console.log('PROTECTED_CLOUD_REVIEW_REQUEST_ACCEPTED');
  }catch{
   console.log('PROTECTED_CLOUD_REVIEW_REQUEST_DENIED');

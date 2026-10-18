@@ -19,6 +19,8 @@ import {executeCompleteOpenRouterSemanticReview}
  from './openrouter-semantic-full-review.mjs';
 import {assessAuthenticatedOpenRouterSpendAuthorization}
  from './openrouter-only-spend-gate.mjs';
+import {fetchAndVerifyUniqueOpenRouterServiceRequest}
+ from './openrouter-unique-service-request.mjs';
 import {prepareOpenRouterNativeComment}
  from './openrouter-native-report.mjs';
 import {fetchAndVerifyOwnerCloudConsent}
@@ -95,6 +97,19 @@ export async function executeProtectedOpenRouterReview({
   });
   if(!consent.ok||consent.globalMonthlyBudgetEur!==15)
     deny('CLOUD_OWNER_SPEND_OR_EGRESS_NOT_PROVEN');
+  // Provider billing may have happened even if the native review failed.
+  // Reject workflow reruns, manual dispatch and duplicate service commands
+  // BEFORE any private paid model POST. Public GitHub GET only, no secrets.
+  stage='UNIQUE_REQUEST';
+  const requestProof=await fetchAndVerifyUniqueOpenRouterServiceRequest({
+    eventName:env.GITHUB_EVENT_NAME,runAttempt:env.GITHUB_RUN_ATTEMPT,
+    prNumber:issuePr,headSha:preflight.target.headSha,
+    model:env.REVIEWER_B_OPENROUTER_MODEL,
+    commentId:Number(env.REVIEWER_B_REQUEST_COMMENT_ID),fetchImpl
+  });
+  if(requestProof.ok!==true||requestProof.uniqueFirstAttempt!==true||
+     requestProof.maySpend!==false)
+    deny('CLOUD_DUPLICATE_OR_UNVERIFIED_PAID_ATTEMPT');
   // Owner consent is separate from independently authenticated OpenRouter-only spend.
   // This OpenRouter-only EUR15 reservation is not implemented. Block BEFORE
   // billable POST; never elevate consent to global ledger proof.

@@ -79,6 +79,7 @@ jobs:
           REVIEWER_B_EXPECTED_HEAD: ${{ steps.cloud_request.outputs.expected_head }}
           REVIEWER_B_OPENROUTER_MODEL: ${{ steps.cloud_request.outputs.model }}
           REVIEWER_B_CLOUD_REQUEST_VERIFIED: ${{ steps.cloud_request.outputs.verified }}
+          REVIEWER_B_REQUEST_COMMENT_ID: ${{ steps.cloud_request.outputs.request_comment_id }}
           REVIEWER_B_CLOUD_TARGET_REPOSITORY: deenkids7-dev/deenkids
           REVIEWER_B_GITHUB_APP_PRIVATE_KEY_PEM: ${{ secrets.REVIEWER_B_GITHUB_APP_PRIVATE_KEY_PEM }}
           REVIEWER_B_OPENROUTER_API_KEY: ${{ secrets.REVIEWER_B_OPENROUTER_API_KEY }}
