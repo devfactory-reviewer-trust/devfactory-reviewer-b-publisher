@@ -32,6 +32,20 @@ test('no workflow has access to private App secrets, write token or privileged t
     // Permit exactly one root permissions mapping; reject ANY nested one.
     assert.equal((contents.match(/^permissions\s*:/gm)||[]).length,1);
     assert.doesNotMatch(contents,/^[ \t]+permissions\s*:/m);
+    // Owner permanently retired these provider start/read lanes.
+    // Keep legacy YAML for audit, but require its sole job to stay dead.
+    if(new Set([
+      'runpod-control-bounded-start.yml',
+      'runpod-control-readonly-diagnostics.yml',
+      'runpod-control-readonly-scope-test.yml',
+      'runpod-gpu-readonly-preflight.yml',
+    ]).has(filename)){
+      assert.match(contents,/^permissions: \{\}$/m);
+      assert.match(contents,/^    if: \$\{\{ false \}\}$/m);
+      assert.equal((contents.match(/^    if:/gm)||[]).length,1);
+      assert.doesNotMatch(contents,/^[ \t]+permissions\s*:/m);
+      continue;
+    }
     if(filename==='runpod-control-readonly-diagnostics.yml'){
       assert.match(contents,/^on:\n  issue_comment:\n    types: \[created\]\n/m);
       assert.match(contents,/^permissions: \{\}\n/m);

@@ -16,7 +16,7 @@ concurrency:
 jobs:
   exact-pod-control-scope-test:
     name: Protected CONTROL key read-only GraphQL scope check
-    if: ${{ github.repository == 'devfactory-reviewer-trust/devfactory-reviewer-b-publisher' && github.ref == 'refs/heads/main' && github.actor == 'devfactory-reviewer-service' && github.event_name == 'issue_comment' && github.event.action == 'created' && github.event.issue.number == 52 && !github.event.issue.pull_request && github.event.comment.body == 'DEVFACTORY_RUNPOD_CONTROL_PREFLIGHT_R161' }}
+    if: ${{ false }}
     environment: runpod-gpu-control
     runs-on: ubuntu-24.04
     timeout-minutes: 5
