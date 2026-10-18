@@ -67,6 +67,18 @@ test('R213 duplicate grant for the same owner/epoch denies, including distinct c
  noAuthority(r);
  assert.ok(r.blockers.includes('OWNER_DELEGATION_GRANT_MISSING_OR_DUPLICATE'));
 });
+test('R213 duplicate obsolete epochs cannot be hidden behind a fresh grant',()=>{
+ const comments=[
+  grant(1,{id:111}),
+  grant(1,{id:112,created_at:'2026-10-18T08:30:00Z'}),
+  grant(2,{id:201,created_at:'2026-10-18T10:00:00Z'})
+ ];
+ const result=assess({...input(),githubComments:comments});
+ noAuthority(result);
+ assert.equal(result.candidateGrantPresent,false);
+ assert.equal(result.candidateGrantEpoch,null);
+ assert.ok(result.blockers.includes('OWNER_DELEGATION_GRANT_MISSING_OR_DUPLICATE'));
+});
 test('R213 same epoch or higher epoch revocation is sticky and blocks',()=>{
  for(const e of [1,2,100]){
   const r=assess({...input(),githubComments:[grant(1),revoke(e)]});
