@@ -62,17 +62,21 @@ export function assessOwnerOpenRouterDelegationShadow(input={}){
   let selected=null;
   if(grants.length===0)add(B.GRANT);
   else{
+    // Reject duplicates across *all* epochs, including a superseded one:
+    // duplicate historical grants must not be hidden by a newer candidate.
+    const seenEpochs=new Set();
+    let duplicateEpoch=false;
+    for(const grant of grants){
+      if(seenEpochs.has(grant.epoch))duplicateEpoch=true;
+      seenEpochs.add(grant.epoch);
+    }
     const maxEpoch=Math.max(...grants.map(x=>x.epoch));
     const latest=grants.filter(x=>x.epoch===maxEpoch);
-    if(latest.length!==1)add(B.GRANT);
+    if(duplicateEpoch||latest.length!==1)add(B.GRANT);
     else selected=latest[0];
     const revokes=relevant.filter(x=>x.kind==='revoke');
     if(selected&&revokes.some(x=>x.epoch>=selected.epoch))add(B.REVOKED);
-    if(selected && grants.some(x=>x.epoch===selected.epoch&&x.id!==selected.id))
-      add(B.GRANT);
   }
-  if(selected&&(!Number.isSafeInteger(selected.epoch)||selected.epoch<1))
-    add(B.EPOCH);
   // A caller-supplied array and caller-supplied source-authenticated=true
   // are *never* privileged proofs, especially for absent revocation.
   add(B.SOURCE);add(B.FRESHNESS);add(B.SPEND);add(B.ENV);
