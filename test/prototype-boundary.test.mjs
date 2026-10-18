@@ -34,64 +34,16 @@ test('no workflow has access to private App secrets, write token or privileged t
     assert.doesNotMatch(contents,/^[ \t]+permissions\s*:/m);
     // Owner permanently retired these provider start/read lanes.
     // Keep legacy YAML for audit, but require its sole job to stay dead.
-    if(new Set([
+    if([
       'runpod-control-bounded-start.yml',
       'runpod-control-readonly-diagnostics.yml',
       'runpod-control-readonly-scope-test.yml',
       'runpod-gpu-readonly-preflight.yml',
-    ]).has(filename)){
+    ].includes(filename)){
       assert.match(contents,/^permissions: \{\}$/m);
       assert.match(contents,/^    if: \$\{\{ false \}\}$/m);
       assert.equal((contents.match(/^    if:/gm)||[]).length,1);
       assert.doesNotMatch(contents,/^[ \t]+permissions\s*:/m);
-      continue;
-    }
-    if(filename==='runpod-control-readonly-diagnostics.yml'){
-      assert.match(contents,/^on:\n  issue_comment:\n    types: \[created\]\n/m);
-      assert.match(contents,/^permissions: \{\}\n/m);
-      assert.match(contents,/environment:\s*runpod-gpu-control/);
-      assert.match(contents,/github\.repository == 'devfactory-reviewer-trust\/devfactory-reviewer-b-publisher'/);
-      assert.match(contents,/github\.ref == 'refs\/heads\/main'/);
-      assert.match(contents,/github\.actor == 'devfactory-reviewer-service'/);
-      assert.match(contents,/github\.event\.issue\.number == 52/);
-      assert.match(contents,/github\.event\.comment\.body == 'DEVFACTORY_RUNPOD_DIAGNOSTICS_R165'/);
-      assert.equal((contents.match(/^      - name:/gm)||[]).length,2);
-      assert.equal((contents.match(/secrets\.RUNPOD_CONTROL_API_KEY/g)||[]).length,1);
-      assert.match(contents,/node source\/scripts\/runpod-control-readonly-diagnostics\.mjs --read-only/);
-      assert.match(contents,/node --test source\/test\/runpod-control-readonly-diagnostics\.test\.mjs/);
-      assert.match(contents,/--proto '=https' --proto-redir '=https'/);
-      assert.doesNotMatch(contents,/\b(?:pull_request|pull_request_target|push|workflow_run|workflow_call|schedule|workflow_dispatch)\s*:/);
-      assert.doesNotMatch(contents,/\b[A-Za-z-]+\s*:\s*write\b|\bwrite-all\b/);
-      assert.doesNotMatch(contents,/\b(?:github\.token|GITHUB_TOKEN|GH_TOKEN|actions\/checkout)\b/);
-      assert.doesNotMatch(contents,/\b(?:podResume|podStop|podTerminate|podFindAndDeployOnDemand)\b/);
-      continue;
-    }
-    if(filename==='runpod-control-bounded-start.yml'){
-      // Guard the only ever allowed billed Pod activation workflow.
-      // A live independent watchdog and conservative monthly budget are
-      // checked in the exact privileged script BEFORE a fixed Pod START.
-      assert.match(contents,/^on:\n  issue_comment:\n    types: \[created\]\n/m);
-      assert.match(contents,/^permissions: \{\}\n/m);
-      assert.match(contents,/environment:\s*runpod-gpu-control/);
-      assert.match(contents,/github\.repository == 'devfactory-reviewer-trust\/devfactory-reviewer-b-publisher'/);
-      assert.match(contents,/github\.ref == 'refs\/heads\/main'/);
-      assert.match(contents,/github\.actor == 'devfactory-reviewer-service'/);
-      assert.match(contents,/github\.event\.issue\.number == 52/);
-      assert.match(contents,/github\.event\.comment\.body == 'DEVFACTORY_RUNPOD_START_24MIN_R164'/);
-      assert.match(contents,/cancel-in-progress: false/);
-      assert.match(contents,/sleep 1440/);
-      assert.match(contents,/timeout-minutes: 33/);
-      assert.match(contents,/if: \$\{\{ always\(\) \}\}/);
-      assert.equal((contents.match(/secrets\.RUNPOD_CONTROL_API_KEY/g)||[]).length,2);
-      assert.match(contents,/node source\/scripts\/runpod-control-bounded-start-v2\.mjs --start-exact-bounded/);
-      assert.match(contents,/node --test source\/test\/runpod-control-bounded-start-v2\.test\.mjs/);
-      assert.match(contents,/node source\/scripts\/runpod-control-stop-exact-pod\.mjs --stop-exact/);
-      assert.equal((contents.match(/^      - name:/gm)||[]).length,4);
-      assert.match(contents,/--proto '=https' --proto-redir '=https'/);
-      assert.doesNotMatch(contents,/\b(?:pull_request|pull_request_target|push|workflow_run|workflow_call|schedule|workflow_dispatch)\s*:/);
-      assert.doesNotMatch(contents,/\b[A-Za-z-]+\s*:\s*write\b|\bwrite-all\b/);
-      assert.doesNotMatch(contents,/\b(?:github\.token|GITHUB_TOKEN|GH_TOKEN|actions\/checkout)\b/);
-      assert.doesNotMatch(contents,/\b(?:delete-pod|terminate-pod|force-push)\b/);
       continue;
     }
     if(filename==='runpod-control-stop-and-watchdog.yml'){
@@ -119,62 +71,6 @@ test('no workflow has access to private App secrets, write token or privileged t
       assert.doesNotMatch(contents,/\b[A-Za-z-]+\s*:\s*write\b|\bwrite-all\b/);
       assert.doesNotMatch(contents,/\b(?:github\.token|GITHUB_TOKEN|GH_TOKEN|actions\/checkout)\b/);
       assert.doesNotMatch(contents,/\b(?:podResume|podFindAndDeployOnDemand|podTerminate|start-pod|resume-pod)\b/);
-      continue;
-    }
-    if(filename==='runpod-control-readonly-scope-test.yml'){
-      // CONTROL secret is extraordinarily sensitive, even in a GET-only
-      // GraphQL query. Accept ONLY the exact owner-approved isolated lane.
-      assert.match(contents,/^on:\n  issue_comment:\n    types: \[created\]\n/m);
-      assert.match(contents,/^permissions: \{\}\n/m);
-      assert.match(contents,/^concurrency:\n  group: runpod-control-scope-test\n  cancel-in-progress: false\n/m);
-      assert.match(contents,/environment:\s*runpod-gpu-control/);
-      assert.match(contents,/github\.repository == 'devfactory-reviewer-trust\/devfactory-reviewer-b-publisher'/);
-      assert.match(contents,/github\.ref == 'refs\/heads\/main'/);
-      assert.match(contents,/github\.actor == 'devfactory-reviewer-service'/);
-      assert.match(contents,/github\.event_name == 'issue_comment'/);
-      assert.match(contents,/github\.event\.action == 'created'/);
-      assert.match(contents,/github\.event\.issue\.number == 52/);
-      assert.match(contents,/!github\.event\.issue\.pull_request/);
-      assert.match(contents,/github\.event\.comment\.body == 'DEVFACTORY_RUNPOD_CONTROL_PREFLIGHT_R161'/);
-      assert.equal((contents.match(/secrets\./g)||[]).length,1);
-      assert.match(contents,/secrets\.RUNPOD_CONTROL_API_KEY/);
-      assert.equal((contents.match(/^      - name:/gm)||[]).length,2);
-      assert.match(contents,/node source\/scripts\/runpod-control-readonly-preflight\.mjs --read-only/);
-      assert.match(contents,/node --test source\/test\/runpod-control-readonly-preflight\.test\.mjs/);
-      assert.match(contents,/--proto '=https' --proto-redir '=https'/);
-      assert.doesNotMatch(contents,/\b(?:pull_request|pull_request_target|push|workflow_run|workflow_call|schedule|workflow_dispatch)\s*:/);
-      assert.doesNotMatch(contents,/\b[A-Za-z-]+\s*:\s*write\b|\bwrite-all\b/);
-      assert.doesNotMatch(contents,/\b(?:github\.token|GITHUB_TOKEN|GH_TOKEN|actions\/checkout)\b/);
-      assert.doesNotMatch(contents,/\b(?:podStop|podResume|podTerminate|podFindAndDeployOnDemand|start-pod|stop-pod)\b/);
-      continue;
-    }
-    if(filename==='runpod-gpu-readonly-preflight.yml'){
-      // One extra READ-ONLY Pod API preflight, manual and owner-approved.
-      // Do not treat it as an ordinary public synthetic workflow: access
-      // to the environment secret requires a separately protected gate.
-      assert.match(contents,/^on:\n  workflow_dispatch:\n  issue_comment:\n    types: \[created\]\n/m);
-      assert.match(contents,/^permissions: \{\}\n/m);
-      assert.match(contents,/^concurrency:\n  group: runpod-readonly-preflight-manual\n  cancel-in-progress: false\n/m);
-      assert.match(contents,/environment:\s*'runpod-gpu-preflight\.'/);
-      assert.doesNotMatch(contents,/environment:\s*runpod-gpu-preflight\s*\n/);
-      assert.match(contents,/github\.ref == 'refs\/heads\/main'/);
-      assert.match(contents,/github\.actor == 'devfactory-reviewer-service'/);
-      assert.match(contents,/github\.repository == 'devfactory-reviewer-trust\/devfactory-reviewer-b-publisher'/);
-      assert.match(contents,/github\.event_name == 'workflow_dispatch'/);
-      assert.match(contents,/github\.event_name == 'issue_comment'/);
-      assert.match(contents,/github\.event\.action == 'created'/);
-      assert.match(contents,/github\.event\.issue\.number == 52/);
-      assert.match(contents,/!github\.event\.issue\.pull_request/);
-      assert.match(contents,/github\.event\.comment\.body == 'DEVFACTORY_RUNPOD_READONLY_PREFLIGHT_R154'/);
-      assert.equal((contents.match(/secrets\./g)||[]).length,2);
-      assert.match(contents,/secrets\.RUNPOD_API_KEY/);
-      assert.equal((contents.match(/^      - name:/gm)||[]).length,3);
-      assert.match(contents,/node source\/scripts\/runpod-gpu-readonly-preflight\.mjs --read-only/);
-      assert.match(contents,/node source\/scripts\/runpod-gpu-billing-readonly\.mjs --read-only-monthly/);
-      assert.match(contents,/--proto '=https' --proto-redir '=https'/);
-      assert.doesNotMatch(contents,/\b(?:pull_request|pull_request_target|push|workflow_run|workflow_call|schedule)\s*:/);
-      assert.doesNotMatch(contents,/\b[A-Za-z-]+\s*:\s*write\b|\bwrite-all\b/);
-      assert.doesNotMatch(contents,/\b(?:github\.token|GITHUB_TOKEN|GH_TOKEN|actions\/checkout)\b/);
       continue;
     }
     if(filename==='reviewer-b-oidc-permission-probe.yml'){
