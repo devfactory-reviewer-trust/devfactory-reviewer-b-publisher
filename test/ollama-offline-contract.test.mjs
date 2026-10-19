@@ -290,6 +290,21 @@ test('completion cannot overrun the actual 8192-token context window',()=>{
  assert.equal(accepted.approvalAuthorized,false);
 });
 
+test('Qwen 3.5 4B candidate is LOCAL-only and emits non-thinking bounded JSON',()=>{
+ const x=prepareOfflineOllamaCandidate({plan:plan(),model:'qwen3.5:4b'});
+ const request=JSON.parse(x.privateRequestJson);
+ assert.equal(request.model,'qwen3.5:4b');
+ assert.equal(request.think,false);
+ assert.equal(request.stream,false);
+ assert.equal(request.keep_alive,0);
+ assert.equal(request.options.num_ctx,8192);
+ assert.equal(x.modelExecuted,false);
+ assert.equal(x.independentReviewVerified,false);
+ assert.equal(x.approvalAuthorized,false);
+ assert.equal(x.privateSourceProcessingAuthorized,false);
+ assert.doesNotMatch(JSON.stringify(x),/SYNTHETIC_ONLY_PRIVATE_DIFF_EXAMPLE/);
+});
+
 test('Qwen3 reasoning candidate requests strictly bounded non-thinking JSON locally',()=>{
  const result=prepareOfflineOllamaCandidate({plan:plan(),model:'qwen3:8b'});
  const request=JSON.parse(result.privateRequestJson);
@@ -417,4 +432,37 @@ test('R86 path binding prevents citing another file line even in multi-file sche
   {path:'src/b.mjs',side:'NEW',lines:[11]}
  ]);
  assert.equal(JSON.stringify(request).includes('deenkids7-dev/deenkids'),true);
+});
+
+test('Qwen 3.5 9B candidate is only a local nonauthorizing bounded trial',()=>{
+ const candidate=prepareOfflineOllamaCandidate({plan:plan(),model:'qwen3.5:9b'});
+ const request=JSON.parse(candidate.privateRequestJson);
+ assert.equal(request.model,'qwen3.5:9b');
+ assert.equal(request.stream,false);
+ assert.equal(request.think,false);
+ assert.equal(request.keep_alive,0);
+ assert.equal(request.options.num_ctx,8192);
+ assert.ok(Number.isSafeInteger(request.options.num_predict));
+ assert.equal(candidate.approvalAuthorized,false);
+ assert.equal(candidate.modelExecuted,false);
+ assert.equal(candidate.privateSourceProcessingAuthorized,false);
+ assert.equal(candidate.independentReviewVerified,false);
+});
+
+test('35B cannot enter protected ordinary candidate or response validation without synthetic-only opt-in',()=>{
+ const experimental='qwen3.6:35b-a3b-coding';
+ assert.throws(()=>prepareOfflineOllamaCandidate({plan:plan(),model:experimental}),
+  /OLLAMA_MODEL_OR_CONTEXT_UNSUPPORTED/);
+ const prepared=prepareOfflineOllamaCandidate({
+  plan:plan(),model:experimental,syntheticGpuBenchmark:true
+ });
+ assert.equal(JSON.parse(prepared.privateRequestJson).model,experimental);
+ assert.equal(prepared.approvalAuthorized,false);
+ assert.throws(()=>parse(completion(noIssues,{model:experimental}),{
+  expectedModel:experimental}),/OLLAMA_COMPLETION_UNVERIFIED/);
+ const checked=parse(completion(noIssues,{model:experimental}),{
+  expectedModel:experimental,syntheticGpuBenchmark:true
+ });
+ assert.equal(checked.approvalAuthorized,false);
+ assert.equal(checked.independentReviewVerified,false);
 });

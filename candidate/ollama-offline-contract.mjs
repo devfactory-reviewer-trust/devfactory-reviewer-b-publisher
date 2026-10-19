@@ -9,7 +9,13 @@ import { normalizeUntrustedModelFindings,prepareBoundedSemanticReview }
 
 // Dormant, pure Ollama adapter. No network, no tokens, no inference and no POST.
 // Inspired by MIT-licensed The-PR-Agent/pr-agent, without copying its source.
-const MODELS=Object.freeze(['qwen2.5-coder:1.5b','qwen2.5-coder:7b','qwen2.5-coder:14b','qwen3:8b','qwen3-coder:30b']);
+const MODELS=Object.freeze(['qwen2.5-coder:1.5b','qwen2.5-coder:7b','qwen2.5-coder:14b','qwen3:8b','qwen3-coder:30b','qwen3.5:4b','qwen3.5:9b']);
+// GPU 35B is an opt-in fixed synthetic-only candidate; protected real review
+// still pins Qwen 7B and cannot opt into this model.
+const EXPERIMENTAL_GPU_SYNTHETIC_MODEL='qwen3.6:35b-a3b-coding';
+const allowedModel=(name,syntheticGpuBenchmark)=>
+  MODELS.includes(name) ||
+  (syntheticGpuBenchmark===true && name===EXPERIMENTAL_GPU_SYNTHETIC_MODEL);
 const SHA40=/^[0-9a-f]{40}$/, HASH=/^[0-9a-f]{64}$/;
 const RUN=/^[A-Za-z0-9_:-]{8,180}$/;
 // Ollama supports strict JSON-schema structured output on /api/chat.
@@ -71,11 +77,11 @@ function checkPlan(plan){
 export function prepareOfflineOllamaCandidate({
   plan,model='qwen2.5-coder:7b',maxOutputTokens=2048,
   protectedEphemeralKeepAlive=false,trustedDeclarationIndex=null,
-  trustedOriginalDiffSha256=null
+  trustedOriginalDiffSha256=null,syntheticGpuBenchmark=false
 }={}){
   checkPlan(plan);
   if(typeof protectedEphemeralKeepAlive!=='boolean'||
-    !MODELS.includes(model)||!Number.isSafeInteger(maxOutputTokens)||
+    !allowedModel(model,syntheticGpuBenchmark)||!Number.isSafeInteger(maxOutputTokens)||
     maxOutputTokens<128||maxOutputTokens>4096)
     deny('OLLAMA_MODEL_OR_CONTEXT_UNSUPPORTED');
   // R75: OLD-side removals have their own verified coordinates and are
@@ -171,7 +177,7 @@ export function prepareOfflineOllamaCandidate({
     return JSON.stringify({
       model,stream:false,format:reviewSchema,
       keep_alive:protectedEphemeralKeepAlive?'5m':0,
-      ...(model==='qwen3:8b'?{think:false}:{}),
+      ...(['qwen3:8b','qwen3.5:4b','qwen3.5:9b'].includes(model)?{think:false}:{}),
       options:{temperature:0,num_ctx:8192,num_predict:maxOutputTokens},
       messages:[{role:'system',content:system+
         (withContext?'\\nThe authenticated_full_diff_declarations field lists only lexical names present on the HEAD side of this PR diff (added or unchanged hunk-context lines), including OTHER fragments. A name listed here must not be claimed absent solely because it is omitted from this shard; lexical scope and imports are not proven.':'')},
@@ -227,7 +233,7 @@ export function prepareOfflineOllamaCandidate({
 export function validateOfflineOllamaCompletion({
   response,expectedModel,runId,trustedChangedPaths,
   trustedDiffBytes,expectedDiffSha256,
-  maxPromptTokens=8192,maxCompletionTokens=2048
+  maxPromptTokens=8192,maxCompletionTokens=2048,syntheticGpuBenchmark=false
 }={}){
   // A valid local model may exhaust its finite output budget while writing
   // structured JSON. Distinguish ONLY this exact, safely bounded condition
@@ -244,7 +250,7 @@ export function validateOfflineOllamaCompletion({
      response.eval_count>0&&response.eval_count<=maxCompletionTokens&&
      response.prompt_eval_count+response.eval_count+512<=8192)
     deny('OLLAMA_OUTPUT_TRUNCATED');
-  if(!MODELS.includes(expectedModel)||!RUN.test(runId)||
+  if(!allowedModel(expectedModel,syntheticGpuBenchmark)||!RUN.test(runId)||
     !Number.isSafeInteger(maxPromptTokens)||maxPromptTokens<1||
     maxPromptTokens>8192||
     !Number.isSafeInteger(maxCompletionTokens)||maxCompletionTokens<128||
