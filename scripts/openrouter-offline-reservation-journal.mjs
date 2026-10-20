@@ -240,5 +240,3 @@ export function reserveOfflineOpenRouterExposure({
     }
   }
 }
-
-[executed on device: MSI (9ce3a633-4309-4f3e-b074-f535afb4ef99)]
