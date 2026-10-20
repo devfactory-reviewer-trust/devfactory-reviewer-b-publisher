@@ -1,0 +1,78 @@
+name: Reviewer B - Isolated PostgreSQL Shadow Concurrency
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'sql/reviewer_b_shadow_central_pg_v1.sql'
+      - 'sql/reviewer_b_shadow_protected_roles_v1.sql'
+      - 'test/openrouter-central-shadow-postgres-real.test.mjs'
+      - 'test/openrouter-central-shadow-sql.test.mjs'
+      - '.github/workflows/reviewer-b-shadow-postgres-multiclient.yml'
+      - 'docs/OPENROUTER-CENTRAL-POSTGRES-SHADOW-BUDGET-20261020.md'
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-synthetic-integration:
+    name: Shadow ledger multi-client PostgreSQL (NO provider)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    services:
+      postgres:
+        image: postgres:16.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: synthetic-shadow-ci-only-20261020
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 3s
+          --health-timeout 2s
+          --health-retries 20
+    steps:
+      # The repository uses exact-SHA GitHub API tarballs instead of
+      # marketplace checkout actions. Do not expose the token to tests.
+      - name: Download exact trusted-repo PR head (read only)
+        shell: bash
+        env:
+          GH_READ_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          GH_EVENT: ${{ github.event_name }}
+          GH_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name || '' }}
+          GH_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$GH_REPO" = "devfactory-reviewer-trust/devfactory-reviewer-b-publisher"
+          test "$GH_EVENT" = "pull_request"
+          test "$GH_HEAD_REPO" = "$GH_REPO"
+          [[ "$GH_SHA" =~ ^[0-9a-f]{40}$ ]]
+          mkdir source
+          curl --fail --silent --show-error --location --retry 2 \
+            --header "Authorization: Bearer ${GH_READ_TOKEN}" \
+            --header 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/${GH_REPO}/tarball/${GH_SHA}" \
+            --output source.tar.gz
+          unset GH_READ_TOKEN
+          tar -xzf source.tar.gz -C source --strip-components=1
+      - name: Install isolated test-only PostgreSQL client
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/reviewer-b-shadow-pg-client" \
+            --no-save --ignore-scripts --no-audit --no-fund --silent pg@8.13.3
+          test -f "$RUNNER_TEMP/reviewer-b-shadow-pg-client/node_modules/pg/lib/index.js"
+      - name: Run real multi-connection PostgreSQL test without secrets
+        shell: bash
+        env:
+          SHADOW_POSTGRES_REAL: '1'
+          SHADOW_PG_CLIENT_ENTRY: ${{ runner.temp }}/reviewer-b-shadow-pg-client/node_modules/pg/lib/index.js
+          PGHOST: 127.0.0.1
+          PGPASSWORD: synthetic-shadow-ci-only-20261020
+        run: |
+          set -euo pipefail
+          cd source
+          node --test test/openrouter-central-shadow-postgres-real.test.mjs
