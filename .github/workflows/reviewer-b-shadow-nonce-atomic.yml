@@ -1,0 +1,72 @@
+name: Reviewer B - Shadow Nonce Atomic PostgreSQL
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'sql/reviewer_b_shadow_nonce_atomic_v1.sql'
+      - 'test/openrouter-shadow-nonce-atomic.test.mjs'
+      - 'test/openrouter-shadow-nonce-atomic-postgres-real.test.mjs'
+      - '.github/workflows/reviewer-b-shadow-nonce-atomic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-shadow-nonce-atomic:
+    name: Synthetic nonce anti-replay and rollback (NO spend)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    services:
+      postgres:
+        image: postgres:16.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: synthetic-shadow-ci-only-20261020
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 3s
+          --health-timeout 2s
+          --health-retries 20
+    steps:
+      - name: Fetch exact same-repository PR HEAD read-only
+        shell: bash
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          GH_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN_READ: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GH_REPO" = "devfactory-reviewer-trust/devfactory-reviewer-b-publisher"
+          test "$GH_HEAD_REPO" = "$GH_REPO"
+          [[ "$GH_SHA" =~ ^[0-9a-f]{40}$ ]]
+          mkdir source
+          curl --fail --silent --show-error --location --retry 2 \
+            --header "Authorization: Bearer ${GH_TOKEN_READ}" \
+            --header 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/${GH_REPO}/tarball/${GH_SHA}" \
+            --output source.tar.gz
+          unset GH_TOKEN_READ
+          tar -xzf source.tar.gz -C source --strip-components=1
+      - name: Install ephemeral PostgreSQL driver
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/reviewer-b-shadow-nonce-pg-client" \
+            --no-save --ignore-scripts --no-audit --no-fund --silent pg@8.13.3
+          test -f "$RUNNER_TEMP/reviewer-b-shadow-nonce-pg-client/node_modules/pg/lib/index.js"
+      - name: Real multi-session PostgreSQL anti-replay checks
+        shell: bash
+        env:
+          SHADOW_POSTGRES_REAL: '1'
+          SHADOW_PG_CLIENT_ENTRY: ${{ runner.temp }}/reviewer-b-shadow-nonce-pg-client/node_modules/pg/lib/index.js
+          PGHOST: 127.0.0.1
+          PGPASSWORD: synthetic-shadow-ci-only-20261020
+        run: |
+          set -euo pipefail
+          cd source
+          node --test test/openrouter-shadow-nonce-atomic-postgres-real.test.mjs

@@ -1,0 +1,96 @@
+name: Reviewer B - Synthetic Shadow Admission Integration
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/openrouter-shadow-admission-synthetic-only.mjs'
+      - 'scripts/openrouter-shadow-billing-reconciliation-offline.mjs'
+      - 'scripts/openrouter-shadow-fx-reconciliation-offline.mjs'
+      - 'scripts/openrouter-shadow-provider-reconciliation-offline.mjs'
+      - 'scripts/openrouter-shadow-evidence-coverage-offline.mjs'
+      - 'scripts/openrouter-shadow-readonly-acquisition-plan-offline.mjs'
+      - 'scripts/openrouter-shadow-audit-anchor-offline.mjs'
+      - 'scripts/openrouter-shadow-audit-multiwitness-offline.mjs'
+      - 'scripts/openrouter-shadow-witness-roster-offline.mjs'
+      - 'test/openrouter-shadow-witness-roster-offline.test.mjs'
+      - 'test/openrouter-startup-no-go-contract.test.mjs'
+      - 'scripts/protected-real-openrouter-review.mjs'
+      - 'docs/DEVFACTORY-RUNNER-STARTUP-BLOCKERS-20261020.md'
+      - 'docs/OPENROUTER-FINANCIAL-EVIDENCE-ATOMIC-RESERVATION-HANDOFF-20261020.md'
+      - 'test/openrouter-shadow-audit-multiwitness-offline.test.mjs'
+      - 'test/openrouter-shadow-audit-anchor-offline.test.mjs'
+      - 'test/openrouter-shadow-readonly-acquisition-plan-offline.test.mjs'
+      - 'test/openrouter-shadow-evidence-coverage-offline.test.mjs'
+      - 'scripts/openrouter-shadow-attempt-lifecycle-offline.mjs'
+      - 'test/openrouter-shadow-attempt-lifecycle-offline.test.mjs'
+      - 'test/openrouter-shadow-provider-reconciliation-offline.test.mjs'
+      - 'test/openrouter-shadow-fx-reconciliation-offline.test.mjs'
+      - 'test/openrouter-shadow-billing-reconciliation-offline.test.mjs'
+      - 'scripts/openrouter-shadow-signed-admission-synthetic-only.mjs'
+      - 'scripts/openrouter-shadow-service-binding-offline.mjs'
+      - 'test/openrouter-shadow-signed-admission-synthetic-only.test.mjs'
+      - 'scripts/openrouter-shadow-claim-provenance-readonly.mjs'
+      - 'test/openrouter-shadow-admission-synthetic-only.test.mjs'
+      - 'sql/reviewer_b_shadow_central_pg_v1.sql'
+      - 'sql/reviewer_b_shadow_protected_roles_v1.sql'
+      - '.github/workflows/reviewer-b-shadow-admission-synthetic.yml'
+      - 'docs/OPENROUTER-SHADOW-ADMISSION-INTEGRATION-20261020.md'
+      - 'docs/OPENROUTER-SHADOW-BILLING-LIABILITY-20261020.md'
+
+permissions:
+  contents: read
+
+jobs:
+  shadow-admission:
+    name: Local mock GitHub + isolated PostgreSQL shadow (NO SPEND)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Download exact same-repository PR HEAD in read-only mode
+        shell: bash
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_HEAD: ${{ github.event.pull_request.head.sha }}
+          GH_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          GH_TOKEN_READ: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GH_REPO" = "devfactory-reviewer-trust/devfactory-reviewer-b-publisher"
+          test "$GH_HEAD_REPO" = "$GH_REPO"
+          [[ "$GH_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          mkdir source
+          curl --fail --silent --show-error --location --retry 2 \
+            --header "Authorization: Bearer ${GH_TOKEN_READ}" \
+            --header 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/${GH_REPO}/tarball/${GH_HEAD}" \
+            --output source.tar.gz
+          unset GH_TOKEN_READ
+          tar -xzf source.tar.gz -C source --strip-components=1
+      - name: Install PGlite only in a disposable test directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/shadow-admission-test" \
+            --no-save --ignore-scripts --no-audit --no-fund --silent \
+            @electric-sql/pglite@0.5.10
+          test -f "$RUNNER_TEMP/shadow-admission-test/node_modules/@electric-sql/pglite/dist/index.js"
+      - name: Verify synthetic GitHub-to-SQL flow is still non-authorizing
+        shell: bash
+        env:
+          SHADOW_PGLITE_ENTRY: ${{ runner.temp }}/shadow-admission-test/node_modules/@electric-sql/pglite/dist/index.js
+        run: |
+          set -euo pipefail
+          cd source
+          node --test test/openrouter-shadow-admission-synthetic-only.test.mjs
+          node --test test/openrouter-shadow-signed-admission-synthetic-only.test.mjs
+          REVIEWER_B_SYNTHETIC_SHADOW_ONLY=1 node --test test/openrouter-shadow-billing-reconciliation-offline.test.mjs
+          REVIEWER_B_SYNTHETIC_SHADOW_ONLY=1 node --test test/openrouter-shadow-fx-reconciliation-offline.test.mjs
+          REVIEWER_B_SYNTHETIC_SHADOW_ONLY=1 node --test test/openrouter-shadow-provider-reconciliation-offline.test.mjs
+          REVIEWER_B_SYNTHETIC_SHADOW_ONLY=1 node --test test/openrouter-shadow-evidence-coverage-offline.test.mjs
+          REVIEWER_B_SYNTHETIC_SHADOW_ONLY=1 node --test test/openrouter-shadow-readonly-acquisition-plan-offline.test.mjs
+          REVIEWER_B_SYNTHETIC_SHADOW_ONLY=1 node --test test/openrouter-shadow-audit-anchor-offline.test.mjs
+          REVIEWER_B_SYNTHETIC_SHADOW_ONLY=1 node --test test/openrouter-shadow-audit-multiwitness-offline.test.mjs
+          REVIEWER_B_SYNTHETIC_SHADOW_ONLY=1 node --test test/openrouter-shadow-witness-roster-offline.test.mjs
+          node --test test/openrouter-startup-no-go-contract.test.mjs
+          REVIEWER_B_SYNTHETIC_SHADOW_ONLY=1 node --test test/openrouter-shadow-attempt-lifecycle-offline.test.mjs

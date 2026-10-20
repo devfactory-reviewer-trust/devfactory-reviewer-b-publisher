@@ -1,0 +1,72 @@
+name: Reviewer B - Signed Authenticated Receiver Integration
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/openrouter-shadow-authenticated-bridge-synthetic-only.mjs'
+      - 'scripts/openrouter-shadow-signed-admission-synthetic-only.mjs'
+      - 'test/openrouter-shadow-authenticated-bridge-postgres-real.test.mjs'
+      - '.github/workflows/reviewer-b-signed-authenticated-receiver.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  signed-receiver:
+    name: Two Ed25519 proofs through PostgreSQL SESSION_USER (NO SPEND)
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    services:
+      postgres:
+        image: postgres:16.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: synthetic-shadow-ci-only-20261020
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 3s
+          --health-timeout 2s
+          --health-retries 20
+    steps:
+      - name: Fetch exact same-repo PR commit with readonly GitHub token
+        shell: bash
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          GH_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_READ_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GH_REPO" = "devfactory-reviewer-trust/devfactory-reviewer-b-publisher"
+          test "$GH_HEAD_REPO" = "$GH_REPO"
+          [[ "$GH_SHA" =~ ^[a-f0-9]{40}$ ]]
+          mkdir source
+          curl --fail --silent --show-error --location --retry 2 \
+            --header "Authorization: Bearer ${GH_READ_TOKEN}" \
+            --header "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GH_REPO}/tarball/${GH_SHA}" \
+            --output source.tar.gz
+          unset GH_READ_TOKEN
+          tar -xzf source.tar.gz -C source --strip-components=1
+      - name: Install disposable PostgreSQL driver
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/reviewer-b-signed-receiver-client" \
+            --no-save --ignore-scripts --no-audit --no-fund --silent pg@8.13.3
+          test -f "$RUNNER_TEMP/reviewer-b-signed-receiver-client/node_modules/pg/lib/index.js"
+      - name: Verify real PostgreSQL authenticated receiver and dual signatures
+        shell: bash
+        env:
+          SHADOW_POSTGRES_REAL: '1'
+          SHADOW_PG_CLIENT_ENTRY: ${{ runner.temp }}/reviewer-b-signed-receiver-client/node_modules/pg/lib/index.js
+          PGHOST: 127.0.0.1
+          PGPASSWORD: synthetic-shadow-ci-only-20261020
+        run: |
+          set -euo pipefail
+          cd source
+          node --test test/openrouter-shadow-authenticated-bridge-postgres-real.test.mjs

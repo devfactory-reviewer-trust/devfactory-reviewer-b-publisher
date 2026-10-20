@@ -142,11 +142,17 @@ export async function executeProtectedOpenRouterReview({
     appJwt:jwtAgain,purpose:'reviewRead',now:refreshNow,fetchImpl
   });
   stage='CONSENT_REFRESH';
-  await fetchAndVerifyOwnerCloudConsent({
+  // Re-check the actual authenticated result before any native publication:
+  // a rejected/expired/withdrawn owner consent must fail closed even if
+  // the first, pre-inference consent check previously succeeded.
+  const refreshedConsent=await fetchAndVerifyOwnerCloudConsent({
     readToken:readAgain.token,prNumber:issuePr,
     headSha:preflight.target.headSha,
     model:env.REVIEWER_B_OPENROUTER_MODEL,now:refreshNow,fetchImpl
   });
+  if(refreshedConsent?.ok!==true||
+     refreshedConsent.globalMonthlyBudgetEur!==15)
+    deny('CLOUD_OWNER_CONSENT_REFRESH_REJECTED');
   stage='WRITE';
   const writerNow=clock();
   if(!Number.isSafeInteger(writerNow)||writerNow<refreshNow)
