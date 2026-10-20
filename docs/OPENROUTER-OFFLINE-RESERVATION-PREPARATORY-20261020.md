@@ -71,5 +71,3 @@ npm test
 
 All test claims are synthetic; the module contains no network call,
 provider key, GitHub mutation, deploy operation or trusted expenditure proof.
-
-[executed on device: MSI (9ce3a633-4309-4f3e-b074-f535afb4ef99)]
