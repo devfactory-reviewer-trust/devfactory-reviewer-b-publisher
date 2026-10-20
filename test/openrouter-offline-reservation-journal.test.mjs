@@ -256,5 +256,3 @@ test('array-typed HEAD in a tampered record fails inspection; valid HEAD cannot 
  assert.equal(reserve(dir,{...request,prNumber:9998,headSha:SHA2,
    requestCommentId:7777}).ok,false);
 });
-
-[executed on device: MSI (9ce3a633-4309-4f3e-b074-f535afb4ef99)]
