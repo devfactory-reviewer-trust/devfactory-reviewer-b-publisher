@@ -6,7 +6,8 @@ import {approvedReadOnlyExecutionContext,executeProtectedReadOnlyPreflight,
   assessProtectedReadOnlyResult}
   from '../scripts/protected-private-read-entrypoint.mjs';
 const workflow=readFileSync(resolve(import.meta.dirname,
- '../.github/workflows/reviewer-b-private-readonly-preflight.yml'),'utf8');
+ '../.github/workflows/reviewer-b-private-readonly-preflight.yml'),'utf8')
+ .replace(/\r\n/g,'\n');
 const context=()=>({
  GITHUB_REPOSITORY:'devfactory-reviewer-trust/devfactory-reviewer-b-publisher',
  GITHUB_REF:'refs/heads/main',

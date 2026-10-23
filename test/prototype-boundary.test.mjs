@@ -27,7 +27,8 @@ test('no workflow has access to private App secrets, write token or privileged t
   const files=readdirSync(workflows).filter(name=>/\.ya?ml$/.test(name));
   assert.ok(files.length>=2);
   for(const filename of files){
-    const contents=readFileSync(path.join(workflows,filename),'utf8');
+    const contents=readFileSync(path.join(workflows,filename),'utf8')
+      .replace(/\r\n/g,'\n');
     // GitHub job-level permissions can OVERRIDE a safe workflow-level block.
     // Permit exactly one root permissions mapping; reject ANY nested one.
     assert.equal((contents.match(/^permissions\s*:/gm)||[]).length,1);

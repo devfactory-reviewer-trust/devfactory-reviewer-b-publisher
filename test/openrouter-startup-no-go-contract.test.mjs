@@ -20,6 +20,9 @@ const assertBlocked=result=>{
   assert.equal(result.maySpend,false);
   assert.equal(result.mayReserve,false);
   assert.equal(result.mayRetryAmbiguousRequest,false);
+  assert.equal(result.mayMerge,false);
+  assert.equal(result.mayDeploy,false);
+  assert.equal(result.mayStartRunner,false);
   assert.equal(result.reason,
     'OPENROUTER_MONTHLY_RESERVATION_AND_IDEMPOTENCY_NOT_IMPLEMENTED');
   assert.equal(result.monthlyCapEur,15);

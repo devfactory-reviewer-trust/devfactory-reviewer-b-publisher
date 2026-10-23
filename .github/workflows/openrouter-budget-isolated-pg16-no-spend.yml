@@ -1,0 +1,49 @@
+name: Offline budget PostgreSQL 16 isolated test (NO SPEND)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-budget:
+    if: github.repository == 'deenkids7-dev/devfactory-reviewer-b-publisher'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Download exact same-repository SHA without checkout credentials
+        shell: bash
+        env:
+          REPO: ${{ github.repository }}
+          COMMIT: ${{ github.sha }}
+          GH_READ_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$REPO" = "deenkids7-dev/devfactory-reviewer-b-publisher"
+          [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          mkdir source
+          curl --fail --silent --show-error --location --retry 2 \
+            --header "Authorization: Bearer ${GH_READ_TOKEN}" \
+            --header "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/tarball/${COMMIT}" \
+            --output source.tar.gz
+          unset GH_READ_TOKEN
+          tar -xzf source.tar.gz -C source --strip-components=1
+      - name: Install disposable PostgreSQL 16 binaries if missing
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -x /usr/lib/postgresql/16/bin/pg_ctl ]]; then
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql-16
+          fi
+          /usr/lib/postgresql/16/bin/pg_ctl --version
+          node --version
+      - name: Isolated real multi-session SQL tests without any provider
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash source/scripts/run-openrouter-budget-postgres16-isolated.sh
+      - name: Verify existing offline no-spend guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test source/test/openrouter-budget-capacity-offline.test.mjs source/test/openrouter-startup-no-go-contract.test.mjs

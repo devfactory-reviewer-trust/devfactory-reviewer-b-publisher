@@ -26,5 +26,8 @@ export function assessAuthenticatedOpenRouterSpendAuthorization(_untrusted={}) {
     maySpend: false,
     mayReserve: false,
     mayRetryAmbiguousRequest: false,
+    mayMerge: false,
+    mayDeploy: false,
+    mayStartRunner: false,
   });
 }

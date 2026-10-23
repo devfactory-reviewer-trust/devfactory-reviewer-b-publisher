@@ -169,6 +169,25 @@ test('PGlite: hardened owner policy rejects pre-existing named and column grants
   }finally{await db.close()}
  }
 });
+test('PGlite: protected-role migration rejects a second run after its own grants',{
+ skip:pglitePath===''?'PGlite not provisioned in baseline zero-dependency CI':false,
+},async()=>{
+ const {PGlite}=await import(pathToFileURL(path.resolve(pglitePath)).href);
+ const db=new PGlite();
+ const rolesSql=readFileSync(new URL('../sql/reviewer_b_shadow_protected_roles_v1.sql',import.meta.url),'utf8');
+ try{
+  await db.exec(sql);
+  await db.exec(rolesSql);
+  await assert.rejects(()=>db.exec(rolesSql),
+    /SHADOW_EXISTING_PRIVILEGES_NOT_TRUSTED/);
+  await db.exec('ROLLBACK');
+  const role=await db.query(
+    "SELECT rolcanlogin,rolinherit,rolsuper FROM pg_catalog.pg_roles WHERE rolname='reviewer_b_shadow_owner_v1'");
+  assert.deepEqual(role.rows[0],{
+    rolcanlogin:false,rolinherit:false,rolsuper:false,
+  });
+ }finally{await db.close()}
+});
 test('PGlite: hardened no-login definer accepts synthetic low-priv proposal',{
  skip:pglitePath===''?'PGlite not provisioned in baseline zero-dependency CI':false,
 },async t=>{

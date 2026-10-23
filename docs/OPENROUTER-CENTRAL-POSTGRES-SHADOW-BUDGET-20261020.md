@@ -31,6 +31,30 @@ that all connect to one trusted durable PostgreSQL database.
   `provider_billing_authenticated=false`. `recorded=true` proves only
   a proposed record exists; it **never** authorizes OpenRouter egress.
 
+## Protected role migration lifecycle — one-shot and fail-closed
+
+`sql/reviewer_b_shadow_protected_roles_v1.sql` is intentionally a
+**one-shot** hardening migration, not an idempotent installer. An explicitly
+authorized PostgreSQL superuser may run it only against a newly inspected,
+dedicated shadow database after the central schema migration. It creates
+fixed NOLOGIN roles, transfers ownership, revokes default privileges, and
+grants only the audited function to the invoker role.
+
+It must not use `CREATE ROLE IF NOT EXISTS`, silently reuse existing roles,
+or repair a partially applied installation. Existing roles may have
+untrusted attributes, memberships, owners, ACLs or prior grants. On a
+repeat run, the preflight treats the first run's invoker grants as existing
+privileges and aborts with `SHADOW_EXISTING_PRIVILEGES_NOT_TRUSTED` before
+altering the protected function or granting further access. The isolated
+PGlite contract covers this re-entry denial and confirms the original owner
+role remains NOLOGIN, NOINHERIT and NOSUPERUSER.
+
+There is no automated recovery path. An operator facing a failed or
+interrupted migration must preserve the evidence, keep the spend gate
+blocked, and obtain a separately reviewed remediation for a fresh isolated
+database. No retry, role alteration, ACL cleanup, production deployment or
+OpenRouter request is authorized by this document.
+
 ## Proof today / what the tests DO NOT prove
 
 The standalone contract test uses only Node.js built-ins and passes under
