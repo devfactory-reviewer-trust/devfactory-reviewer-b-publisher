@@ -97,6 +97,15 @@ test('exact-head service issue may request stacked advisory, never dispatch or u
   assert.equal(protectedScript.selectAdvisoryStackedScope(candidate),false);
 });
 
+test('protected execution threads exact-head advisory scope into real preflight',()=>{
+ const source=readFileSync(new globalThis.URL(
+  '../scripts/protected-real-semantic-review.mjs',import.meta.url),'utf8');
+ const invocation=source.match(/const preflight=await runReadOnlyReviewPreflight\(\{([\s\S]*?)\}\);/);
+ assert.ok(invocation,'real preflight invocation must remain explicit');
+ assert.match(invocation[1],
+  /allowAdvisoryStackedBase:\s*selectAdvisoryStackedScope\(env\)/);
+});
+
 test('stacked Qwen COMMENT clearly warns it is only an incremental branch delta',()=>{
  const review=prepareRealSemanticComment({
   preflight:{...preflight(),target:{...preflight().target,

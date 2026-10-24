@@ -337,7 +337,8 @@ export async function executeProtectedRealSemanticReview({
    stage='PRIVATE_PREFLIGHT';
    const preflight=await runReadOnlyReviewPreflight({
      prNumber:Number(env.REVIEWER_B_TARGET_PR),
-     runId,installationToken:read.token,fetchImpl});
+     runId,installationToken:read.token,fetchImpl,
+     allowAdvisoryStackedBase:selectAdvisoryStackedScope(env)});
    // Issue #21 service requests bind to a specific PR commit; never review
    // a moved HEAD simply because its number and repository still match.
    if(env.GITHUB_EVENT_NAME==='issue_comment' &&
