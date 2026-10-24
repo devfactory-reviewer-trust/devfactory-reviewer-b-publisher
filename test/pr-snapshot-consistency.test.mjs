@@ -55,6 +55,33 @@ rejects('rejects wrong PR', {
 rejects('rejects wrong base branch', {
   metadataBefore:{...metadata(),base:{...metadata().base,ref:'release'}}
 },'GITHUB_PR_NOT_ELIGIBLE');
+
+test('exact same-repo codex stacked PR is advisory-eligible only by explicit opt-in',()=>{
+  const stacked={...metadata(),base:{...metadata().base,
+    ref:'codex/openrouter-offline-startup-audit-20261021'}};
+  const params=fixture({metadataBefore:stacked,metadataAfter:stacked});
+  assert.throws(()=>snapshot(params),e=>e.message==='GITHUB_PR_NOT_ELIGIBLE');
+  const permitted=snapshot({...params,allowAdvisoryStackedBase:true});
+  assert.equal(permitted.base_ref,stacked.base.ref);
+  assert.equal(permitted.diff_sha256,createHash('sha256').update(diff).digest('hex'));
+});
+
+test('advisory stacked eligibility fails closed on unsafe bases, forks and base drift',()=>{
+  for(const ref of ['release','main','codex/../master','codex/', 'codex/Bad']){
+    const bad={...metadata(),base:{...metadata().base,ref}};
+    assert.throws(()=>snapshot({...fixture({metadataBefore:bad,metadataAfter:bad}),
+      allowAdvisoryStackedBase:true}),e=>e.message==='GITHUB_PR_NOT_ELIGIBLE');
+  }
+  const stacked={...metadata(),base:{...metadata().base,ref:'codex/stack-one'}};
+  const moved={...metadata(),base:{...metadata().base,
+    ref:'codex/stack-one',sha:'c'.repeat(40)}};
+  assert.throws(()=>snapshot({...fixture({metadataBefore:stacked,metadataAfter:moved}),
+    allowAdvisoryStackedBase:true}),e=>e.message==='GITHUB_PR_CHANGED_DURING_READ');
+  const fork={...stacked,head:{...stacked.head,
+    repo:{full_name:'attacker/fork',id:1282086207}}};
+  assert.throws(()=>snapshot({...fixture({metadataBefore:fork,metadataAfter:fork}),
+    allowAdvisoryStackedBase:true}),e=>e.message==='GITHUB_PR_NOT_ELIGIBLE');
+});
 test('target private master is required even though public Publisher uses main',()=>{
   const pinned=snapshot(fixture());
   assert.equal(pinned.repository,'deenkids7-dev/deenkids');

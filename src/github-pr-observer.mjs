@@ -36,7 +36,7 @@ function parseMetadata(r, expectedUrl) {
  * GitHub API client and MUST NOT take requests or JSON from the PR author.
  * There is NO GitHub write or approval path in this module.
  */
-export async function observePrSnapshot({ prNumber, request }) {
+export async function observePrSnapshot({ prNumber, request, allowAdvisoryStackedBase=false }) {
   if (!Number.isSafeInteger(prNumber) || prNumber < 1 ||
       prNumber > 2147483647 || typeof request !== 'function') {
     deny('INVALID_GITHUB_REQUEST_CONTRACT');
@@ -65,7 +65,8 @@ export async function observePrSnapshot({ prNumber, request }) {
   const after=parseMetadata(afterResponse,url);
   const snapshot=deriveConsistentPrSnapshot({
     requestedPr:prNumber,metadataBefore:before,
-    metadataAfter:after,rawDiff:diffResponse.body
+    metadataAfter:after,rawDiff:diffResponse.body,
+    allowAdvisoryStackedBase
   });
   if (!SHA40.test(snapshot.head_sha) || !SHA40.test(snapshot.base_sha)) {
     deny('INVALID_GITHUB_COMMIT_IDENTITY');

@@ -10,6 +10,12 @@ function deny(code) { throw new Error(code); }
 function isObject(x) { return x !== null && typeof x === 'object' && !Array.isArray(x); }
 
 const SAFE_PATH=/^(?!\/)(?!.*(?:^|\/)\.{1,2}(?:\/|$))[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/;
+// Stacked branch deltas are allowed only in an explicitly scoped, COMMENTED-only
+// advisory call. This option must never be enabled by an approving reviewer.
+function validAdvisoryStackedBase(ref) {
+  return typeof ref==='string' && /^codex\/[a-z0-9][a-z0-9._/-]{0,99}$/.test(ref) &&
+    !ref.includes('..') && !ref.includes('//') && !ref.endsWith('/');
+}
 
 /**
  * GitHub text diff must have one complete and parseable header and at least
@@ -116,7 +122,7 @@ function checkDiffCoverage(text, expectedCount) {
   if(count!==expectedCount) deny('GITHUB_DIFF_COVERAGE_UNVERIFIED');
 }
 
-function extractMetadata(document, requestedPr) {
+function extractMetadata(document, requestedPr, allowAdvisoryStackedBase=false) {
   if (!isObject(document) || !isObject(document.head) ||
       !isObject(document.base) || !isObject(document.base.repo) ||
       !isObject(document.head.repo)) {
@@ -128,7 +134,8 @@ function extractMetadata(document, requestedPr) {
       // Target PRIVATE deenkids7-dev/deenkids default branch is master.
       // Publisher PUBLIC devfactory-reviewer-b-publisher uses main; do not
       // mistake its default branch for the reviewed PR's required base.
-      document.base.ref !== 'master' ||
+      (document.base.ref !== 'master' &&
+       !(allowAdvisoryStackedBase===true && validAdvisoryStackedBase(document.base.ref))) ||
       document.base.repo.full_name !== REPO ||
       document.base.repo.id !== REPO_ID ||
       document.head.repo.full_name !== REPO ||
@@ -142,7 +149,7 @@ function extractMetadata(document, requestedPr) {
   return {
     repository: REPO, repository_id: REPO_ID, pr_number: requestedPr,
     head_sha: document.head.sha, base_sha: document.base.sha,
-    changed_files: document.changed_files
+    base_ref:document.base.ref,changed_files: document.changed_files
   };
 }
 
@@ -156,12 +163,13 @@ function extractMetadata(document, requestedPr) {
  * Small text-only PRs by design: unsupported cases are BLOCKED, never PASS.
  */
 export function deriveConsistentPrSnapshot({
-  requestedPr, metadataBefore, metadataAfter, rawDiff
+  requestedPr, metadataBefore, metadataAfter, rawDiff,
+  allowAdvisoryStackedBase=false
 }) {
-  const before = extractMetadata(metadataBefore, requestedPr);
-  const after = extractMetadata(metadataAfter, requestedPr);
+  const before = extractMetadata(metadataBefore, requestedPr, allowAdvisoryStackedBase);
+  const after = extractMetadata(metadataAfter, requestedPr, allowAdvisoryStackedBase);
   for (const key of ['repository','repository_id','pr_number',
-    'head_sha','base_sha','changed_files']) {
+    'head_sha','base_sha','base_ref','changed_files']) {
     if (before[key] !== after[key]) deny('GITHUB_PR_CHANGED_DURING_READ');
   }
   if (!Buffer.isBuffer(rawDiff) ||
@@ -179,6 +187,8 @@ export function deriveConsistentPrSnapshot({
     repository:before.repository, repository_id:before.repository_id,
     pr_number:before.pr_number, head_sha:before.head_sha,
     base_sha:before.base_sha,
+    ...(allowAdvisoryStackedBase===true && before.base_ref!=='master'
+      ? {base_ref:before.base_ref,advisory_stacked:true} : {}),
     diff_sha256:createHash('sha256').update(rawDiff).digest('hex')
   });
 }

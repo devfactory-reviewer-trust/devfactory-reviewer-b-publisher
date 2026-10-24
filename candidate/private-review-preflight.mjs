@@ -18,7 +18,8 @@ function deny(code) { throw new Error(code); }
  * interface. This preflight is not a code review or an approval.
  */
 export async function runReadOnlyReviewPreflight({
-  prNumber, runId, installationToken, fetchImpl=fetch
+  prNumber, runId, installationToken, fetchImpl=fetch,
+  allowAdvisoryStackedBase=false
 }={}) {
   const transport=createReadOnlyGitHubTransport({
     installationToken,fetchImpl
@@ -32,7 +33,7 @@ export async function runReadOnlyReviewPreflight({
     }
     return response;
   };
-  const snapshot=await observePrSnapshot({prNumber,request});
+  const snapshot=await observePrSnapshot({prNumber,request,allowAdvisoryStackedBase});
   if(!Buffer.isBuffer(rawDiffBytes)||rawDiffBytes.length<1 ||
      createHash('sha256').update(rawDiffBytes).digest('hex')!==snapshot.diff_sha256){
     deny('PREFLIGHT_DIFF_MISMATCH');
@@ -46,6 +47,7 @@ export async function runReadOnlyReviewPreflight({
     prNumber:snapshot.pr_number,
     headSha:snapshot.head_sha,
     baseSha:snapshot.base_sha,
+    ...(snapshot.advisory_stacked===true?{baseRef:snapshot.base_ref}:{}),
     diffSha256:snapshot.diff_sha256
   });
   const report=Buffer.from(audit.reportBytes);
