@@ -6,6 +6,7 @@ import {canRunRealSemanticReview,prepareRealSemanticComment,
   publishRealSemanticComment,executeProtectedRealSemanticReview,
   classifyProtectedReviewFailure}
   from '../scripts/protected-real-semantic-review.mjs';
+import * as protectedScript from '../scripts/protected-real-semantic-review.mjs';
 
 const HEAD='a'.repeat(40),BASE='b'.repeat(40),DIFF='c'.repeat(64);
 const RUN='gh-38140023698-1', PR=899;
@@ -82,6 +83,34 @@ test('real LOCAL response is represented as COMMENT, never approval',()=>{
  assert.match(p.body,/Real local response SHA-256/);
  assert.match(p.body,/NO automated PASS/);
  assert.doesNotMatch(p.body,/event:\s*APPROVE/);
+});
+test('exact-head service issue may request stacked advisory, never dispatch or untrusted actor',()=>{
+ const trusted={...env(),GITHUB_EVENT_NAME:'issue_comment',
+  REVIEWER_B_EXPECTED_HEAD:HEAD};
+ assert.equal(typeof protectedScript.selectAdvisoryStackedScope,'function');
+ assert.equal(protectedScript.selectAdvisoryStackedScope(trusted),true);
+ for(const candidate of [env(),{...trusted,GITHUB_EVENT_NAME:'workflow_dispatch'},
+   {...trusted,REVIEWER_B_EXPECTED_HEAD:''},
+   {...trusted,GITHUB_ACTOR:'deenkids7-dev'},
+   {...trusted,GITHUB_REF:'refs/heads/development'},
+   {...trusted,GITHUB_WORKFLOW_REF:'attacker/other'}])
+  assert.equal(protectedScript.selectAdvisoryStackedScope(candidate),false);
+});
+
+test('stacked Qwen COMMENT clearly warns it is only an incremental branch delta',()=>{
+ const review=prepareRealSemanticComment({
+  preflight:{...preflight(),target:{...preflight().target,
+    baseRef:'codex/openrouter-offline-startup-audit-20261021'}},
+  local:local(),runId:RUN
+ });
+ assert.equal(review.event,'COMMENT');
+ assert.match(review.body,/STACKED BRANCH DELTA ONLY/);
+ assert.match(review.body,/codex\/openrouter-offline-startup-audit-20261021/);
+ assert.match(review.body,/does not validate unmerged base ancestry/);
+ assert.equal(review.approvalAuthorized,false);
+ assert.equal(review.independentReviewVerified,false);
+ const ordinary=prepared();
+ assert.doesNotMatch(ordinary.body,/STACKED BRANCH DELTA ONLY/);
 });
 test('protected native Qwen report declares QUICK or DEEP and Gemini is NEVER a required gate',()=>{
  const quick=prepareRealSemanticComment({

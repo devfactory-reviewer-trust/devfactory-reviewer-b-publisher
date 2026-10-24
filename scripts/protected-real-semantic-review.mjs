@@ -58,8 +58,22 @@ export function canRunRealSemanticReview(env){
    typeof env.REVIEWER_B_TARGET_PR==='string' &&
    /^[1-9][0-9]{0,9}$/.test(env.REVIEWER_B_TARGET_PR);
 }
+// Only the exact-HEAD service-owned issue request on protected main can ask
+// for a stacked branch-delta advisory. No dispatch, push or paid workflow.
+export function selectAdvisoryStackedScope(env){
+ return canRunRealSemanticReview(env) &&
+   env.GITHUB_EVENT_NAME==='issue_comment' &&
+   typeof env.REVIEWER_B_EXPECTED_HEAD==='string' &&
+   SHA40.test(env.REVIEWER_B_EXPECTED_HEAD);
+}
 export function prepareRealSemanticComment({preflight,local,runId}={}){
  const t=preflight?.target,bytes=local?.privateCanonicalReportBytes;
+ if(t?.baseRef!==undefined &&
+    (typeof t.baseRef!=='string'||
+     !/^codex\/[a-z0-9][a-z0-9._/-]{0,99}$/.test(t.baseRef)||
+     t.baseRef.includes('..')||t.baseRef.includes('//')||
+     t.baseRef.endsWith('/')))
+   deny('REAL_SEMANTIC_PROOF_INVALID');
  // The full PRIVATE report can legitimately exceed the historical 16 KiB
  // display budget after exhaustive bounded local Qwen shard analysis.
  // Never mistake a complete report for a fake/incomplete model proof.
@@ -139,6 +153,9 @@ export function prepareRealSemanticComment({preflight,local,runId}={}){
    '', 'Result: '+outcome+'; NO automated PASS or merge authority.',
    'Model: '+MODEL,'Exact head: '+t.headSha,
    'Exact base: '+t.baseSha,
+   ...(t.baseRef?[
+     'Review scope: STACKED BRANCH DELTA ONLY ('+text(t.baseRef,110)+'); does not validate unmerged base ancestry.'
+   ]:[]),
    'Private diff SHA-256: '+t.diffSha256,
    'Real local report SHA-256: '+reportSha,
    'Real local response SHA-256: '+local.localResponseSha256,

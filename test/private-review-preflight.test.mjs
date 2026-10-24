@@ -125,6 +125,29 @@ test('no static matches yields INCONCLUSIVE not PASS',async()=>{
   assert.equal(result.staticDisposition,'INCONCLUSIVE');
   assert.equal(result.approvalAuthorized,false);
 });
+
+test('stacked private PR stays denied by default and yields advisory-only exact scope when explicitly enabled',async()=>{
+  const safe=Buffer.from('diff --git a/src/demo.mjs b/src/demo.mjs\n'+
+    'index aa..bb 100644\n--- a/src/demo.mjs\n+++ b/src/demo.mjs\n'+
+    '@@ -1 +1 @@\n-before\n+after\n');
+  const stacked={...meta(),base:{...meta().base,
+    ref:'codex/openrouter-offline-startup-audit-20261021'}};
+  const fake=service({before:stacked,after:stacked,diff:safe});
+  await assert.rejects(()=>runReadOnlyReviewPreflight({
+    prNumber:898,runId:RUN,installationToken:TOKEN,fetchImpl:fake.fetchImpl
+  }),/GITHUB_PR_NOT_ELIGIBLE/);
+  const probe=service({before:stacked,after:stacked,diff:safe});
+  const result=await runReadOnlyReviewPreflight({
+    prNumber:898,runId:RUN,installationToken:TOKEN,fetchImpl:probe.fetchImpl,
+    allowAdvisoryStackedBase:true
+  });
+  assert.equal(result.target.baseRef,stacked.base.ref);
+  assert.equal(result.target.headSha,'a'.repeat(40));
+  assert.equal(result.target.baseSha,'b'.repeat(40));
+  assert.equal(result.staticDisposition,'INCONCLUSIVE');
+  assert.equal(result.approvalAuthorized,false);
+  assert.equal(result.independentReviewVerified,false);
+});
 test('a changed HEAD between metadata reads prevents findings emission',async()=>{
   const fake=service({after:{...meta(),head:{...meta().head,sha:'c'.repeat(40)}}});
   await assert.rejects(()=>runReadOnlyReviewPreflight({
