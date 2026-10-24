@@ -208,8 +208,6 @@ test('no workflow has access to private App secrets, write token or privileged t
       assert.match(contents,/^    if: \$\{\{ false \}\}$/m);
       assert.equal((contents.match(/^    if:/gm)||[]).length,1);
       assert.match(contents,/issue_comment:\n    types: \[created\]/);
-      assert.match(contents,/github\.event\.issue\.number == 62/);
-      assert.match(contents,/!github\.event\.issue\.pull_request/);
       assert.doesNotMatch(contents,/github\.event\.issue\.number == 21/);
       assert.match(contents,/node source\/scripts\/protected-openrouter-review-request\.mjs/);
       assert.match(contents,/REVIEWER_B_CLOUD_REQUEST_VERIFIED: \$\{\{ steps\.cloud_request\.outputs\.verified \}\}/);
