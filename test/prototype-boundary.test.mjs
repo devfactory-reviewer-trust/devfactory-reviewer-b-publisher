@@ -203,9 +203,10 @@ test('no workflow has access to private App secrets, write token or privileged t
       assert.match(contents,/^permissions: \{\}\n/m);
       assert.match(contents,/^on:\n  workflow_dispatch:\n/m);
       assert.match(contents,/environment:\s*reviewer-b-publish/);
-      assert.match(contents,/github\.actor == 'devfactory-reviewer-service'/);
-      assert.match(contents,/github\.ref == 'refs\/heads\/main'/);
-      assert.match(contents,/github\.event_name == 'workflow_dispatch'/);
+      // No independently authenticated account-wide reservation exists yet.
+      // Cloud review must SKIP immediately until its separate rollout.
+      assert.match(contents,/^    if: \$\{\{ false \}\}$/m);
+      assert.equal((contents.match(/^    if:/gm)||[]).length,1);
       assert.match(contents,/issue_comment:\n    types: \[created\]/);
       assert.match(contents,/github\.event\.issue\.number == 62/);
       assert.match(contents,/!github\.event\.issue\.pull_request/);
