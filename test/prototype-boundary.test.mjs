@@ -102,34 +102,14 @@ test('no workflow has access to private App secrets, write token or privileged t
       continue;
     }
     if(filename==='reviewer-b-private-semantic.yml'){
-      // Only the distinct, approved protected-main service principal can
-      // execute a PRIVATE model. No PR-branch workflow, write GITHUB_TOKEN
-      // or external paid inference provider can be used. Exact one-shot
-      // push marker is still protected by the same environment and actor.
-      assert.match(contents,/^on:\n  workflow_dispatch:[\s\S]*?  push:\n    branches:\n      - main\n    paths:\n      - docs\/reviewer-b-semantic-live-899-20261011\.marker\n/m);
-      assert.equal((contents.match(/^  push:/gm)||[]).length,1);
+      // Owner retired the LOCAL Qwen/Ollama path. Preserve historical
+      // workflow for audit, but its sole job MUST remain hard disabled.
+      // The independent OpenRouter workflow is distinct and still gated.
       assert.match(contents,/^permissions: \{\}\n/m);
-      assert.match(contents,/^concurrency:\n  group: reviewer-b-protected-real-semantic-manual\n  cancel-in-progress: false\n/m);
-      assert.match(contents,/environment:\s*reviewer-b-publish/);
-      assert.match(contents,/github\.ref == 'refs\/heads\/main'/);
-      assert.match(contents,/github\.actor == 'devfactory-reviewer-service'/);
-      assert.match(contents,/github\.repository == 'devfactory-reviewer-trust\/devfactory-reviewer-b-publisher'/);
-      assert.equal((contents.match(/secrets\./g)||[]).length,1);
-      assert.match(contents,/secrets\.REVIEWER_B_GITHUB_APP_PRIVATE_KEY_PEM/);
-      assert.match(contents,/REVIEWER_B_EXPECTED_MODEL: 'qwen2\.5-coder:7b'/);
-      assert.match(contents,/OLLAMA_NO_CLOUD: '1'/);
-      assert.match(contents,/127\.0\.0\.1:11434/);
-      assert.match(contents,/sha256sum -c -/);
-      assert.match(contents,/node scripts\/protected-real-semantic-review\.mjs/);
-      assert.match(contents,/^  issue_comment:\n    types: \[created\]\n/m);
-      assert.match(contents,/github\.event\.issue\.number == 21/);
-      assert.match(contents,/github\.event\.action == 'created'/);
-      assert.match(contents,/!github\.event\.issue\.pull_request/);
-      assert.match(contents,/node source\/scripts\/protected-review-request\.mjs/);
-      assert.match(contents,/REVIEWER_B_TARGET_PR: \$\{\{ steps\.review_request\.outputs\.pr_number \}\}/);
-      assert.match(contents,/REVIEWER_B_EXPECTED_HEAD: \$\{\{ steps\.review_request\.outputs\.expected_head \}\}/);
-      assert.match(contents,/github\.event_name == 'workflow_dispatch' \|\| github\.event_name == 'push'/);
-      assert.match(contents,/--proto '=https' --proto-redir '=https'/);
+      assert.match(contents,/^    if: \$\{\{ false \}\}$/m);
+      assert.equal((contents.match(/^    if:/gm)||[]).length,1);
+      assert.match(contents,/^    environment: reviewer-b-publish$/m);
+      assert.match(contents,/reviewer-b-private-openrouter\.yml/);
       assert.doesNotMatch(contents,/\b(?:pull_request|pull_request_target|workflow_run|workflow_call|schedule)\s*:/);
       assert.doesNotMatch(contents,/\b[A-Za-z-]+\s*:\s*write\b/);
       assert.doesNotMatch(contents,/github\.token|GH_TOKEN|GITHUB_TOKEN|actions\/checkout/);
