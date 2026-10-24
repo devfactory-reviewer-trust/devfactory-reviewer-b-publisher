@@ -36,7 +36,10 @@ concurrency:
 jobs:
   protected-private-openrouter-review:
     name: OpenRouter ZDR exact private diff - native COMMENTED only
-    if: ${{ github.repository == 'devfactory-reviewer-trust/devfactory-reviewer-b-publisher' && github.ref == 'refs/heads/main' && github.actor == 'devfactory-reviewer-service' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'issue_comment' && github.event.action == 'created' && github.event.issue.number == 62 && !github.event.issue.pull_request)) }}
+    # Current OpenRouter spend gate cannot authenticate a shared account-wide
+    # reservation; owner policy is SKIP review rather than wait or fall back.
+    # Re-enable only by a separately reviewed change with real budget/ZDR proof.
+    if: ${{ false }}
     environment: reviewer-b-publish
     runs-on: ubuntu-24.04
     timeout-minutes: 45
