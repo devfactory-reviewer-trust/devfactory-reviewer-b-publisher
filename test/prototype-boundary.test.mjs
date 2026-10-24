@@ -246,7 +246,28 @@ test('no workflow has access to private App secrets, write token or privileged t
       assert.doesNotMatch(contents,/\b(?:actions\/checkout|GH_TOKEN|GITHUB_TOKEN|id-token|attestations)\b/);
       assert.doesNotMatch(contents,/\b(?:contents|pull-requests|issues|actions|checks)\s*:\s*write\b/);
       continue;
-    }    assert.match(contents,/permissions:\s*\n\s*contents:\s*read\b/);
+    }
+    if(filename==='reviewer-b-openrouter-key-readonly.yml'){
+      // Existing $3 OpenRouter key is inspected only after manual protected-main dispatch.
+      // This lane needs NO GITHUB_TOKEN permissions: {} is stricter than read-only.
+      assert.match(contents,/^permissions: \{\}\n/m);
+      assert.match(contents,/^on:\n  workflow_dispatch:\n/m);
+      assert.match(contents,/environment:\s*reviewer-b-publish/);
+      const guard=contents.match(/^    if: (.+)$/m)?.[1];
+      assert.equal(guard,"\${{ github.repository == 'devfactory-reviewer-trust/devfactory-reviewer-b-publisher' && github.ref == 'refs/heads/main' && github.actor == 'devfactory-reviewer-service' && github.event_name == 'workflow_dispatch' && github.run_attempt == 1 }}");
+      assert.equal((contents.match(/^    if:/gm)||[]).length,1);
+      assert.equal((contents.match(/secrets\./g)||[]).length,1);
+      assert.match(contents,/secrets\.REVIEWER_B_OPENROUTER_API_KEY/);
+      assert.match(contents,/node scripts\/openrouter-existing-key-readonly-diagnostic\.mjs/);
+      assert.match(contents,/--proto '=https' --proto-redir '=https'/);
+      assert.match(contents,/--max-time 45 --max-filesize 8388608/);
+      assert.doesNotMatch(contents,/\b(?:pull_request|pull_request_target|workflow_run|workflow_call|push|schedule|issue_comment)\s*:/);
+      assert.doesNotMatch(contents,/\b(?:actions\/checkout|GH_TOKEN|GITHUB_TOKEN|github\.token|id-token|attestations)\b/);
+      assert.doesNotMatch(contents,/(?:\bmethod:|--request|-X)\s*(?:POST|PATCH|PUT|DELETE)\b/);
+      assert.doesNotMatch(contents,/\b(?:contents|pull-requests|issues|actions|checks)\s*:\s*write\b/);
+      continue;
+    }
+    assert.match(contents,/permissions:\s*\n\s*contents:\s*read\b/);
     assert.doesNotMatch(contents,/\bpull_request_target\s*:/);
     assert.doesNotMatch(contents,/\bworkflow_run\s*:/);
     assert.doesNotMatch(contents,/\bworkflow_call\s*:/);
