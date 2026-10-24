@@ -104,11 +104,11 @@ test('cloud context fails closed without parser-verified request; no extra event
   {REVIEWER_B_OPENROUTER_MODEL:'openrouter/auto'},
  ])assert.equal(canRunProtectedOpenRouterReview({...e,...diff}),false);
 });
-test('protected workflow authenticates strict service request before PRIVATE credentials',()=>{
+test('protected workflow stays paused while retaining strict request verification before PRIVATE credentials',()=>{
  const source=readFileSync(fileURLToPath(new URL(
   '../.github/workflows/reviewer-b-private-openrouter.yml',import.meta.url)),'utf8').replace(/\r\n/g,'\n');
  assert.match(source,/issue_comment:\n\s+types: \[created\]/);
- assert.match(source,/github\.event\.issue\.number == 62/);
+ assert.match(source,/^    if: \$\{\{ false \}\}$/m);
  assert.doesNotMatch(source,/github\.event\.issue\.number == 21/);
  const request=source.indexOf('node source/scripts/protected-openrouter-review-request.mjs');
  const privateStep=source.indexOf('- name: Protected exact-head owner-consented cloud analysis');
