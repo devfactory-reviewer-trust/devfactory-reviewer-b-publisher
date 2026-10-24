@@ -1,5 +1,5 @@
 /**
- * Explicit owner consent for PRIVATE code egress + 15 EUR shared budget.
+ * Explicit owner consent for PRIVATE code egress + native $13 split ($10/$3).
  * A workflow dispatch/service actor is NOT sufficient. The user must first
  * post a fresh exact-HEAD, model, month-bound comment as repository OWNER.
  * No code, keys or bearer tokens are ever returned or logged.
@@ -10,7 +10,7 @@ const SHA40=/^[0-9a-f]{40}$/;
 const MONTH=/^20[2-9][0-9]-(0[1-9]|1[0-2])$/;
 const deny=c=>{throw Error(c)};
 const MSG=(pr,head,model,month)=>
- '/devfactory-openrouter-consent '+pr+' '+head+' '+model+' '+month+' budget15eur';
+ '/devfactory-openrouter-consent '+pr+' '+head+' '+model+' '+month+' budget13usd';
 const API='https://api.github.com/repos/'+REPO+'/issues/';
 const MAX_BYTES=128*1024;
 export function assessOwnerCloudConsent({items,prNumber,headSha,model,month,now}={}){
@@ -32,7 +32,7 @@ export function assessOwnerCloudConsent({items,prNumber,headSha,model,month,now}
     new Date(now).toISOString().slice(0,7)!==month)
     return Object.freeze({ok:false,reason:'OR_CONSENT_OWNER_OR_FRESHNESS_UNVERIFIED'});
  return Object.freeze({ok:true,authorizedPr:prNumber,authorizedHead:headSha,
-  authorizedModel:model,authorizedMonth:month,globalMonthlyBudgetEur:15,
+  authorizedModel:model,authorizedMonth:month,globalMonthlyBudgetUsd:13,
   ownerCommentId:c.id,independentReviewVerified:false,mayMerge:false});
 }
 export async function fetchAndVerifyOwnerCloudConsent({

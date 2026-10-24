@@ -13,7 +13,7 @@ import {runReadOnlyReviewPreflight}
  from '../candidate/private-review-preflight.mjs';
 import {readNativeReviews} from '../candidate/github-review-readback.mjs';
 import {assessNativeReviewUniqueness} from '../candidate/native-review-uniqueness.mjs';
-import {OPENROUTER_MODEL_IDS}
+import {OPENROUTER_MODEL_IDS,preflightOpenRouterKey}
  from './openrouter-zdr-executor.mjs';
 import {executeCompleteOpenRouterSemanticReview}
  from './openrouter-semantic-full-review.mjs';
@@ -86,8 +86,8 @@ export async function executeProtectedOpenRouterReview({
     observed:prior,prNumber:issuePr,
     currentHeadSha:preflight.target.headSha
   }).blocked)deny('CLOUD_ALREADY_REVIEWED');
-  // Owner separately attests private third-party egress AND GLOBAL 15 EUR
-  // RunPod+OpenRouter spend for this exact HEAD, model and UTC month.
+  // Owner separately attests private third-party egress and the $13
+  // native two-key split for this exact HEAD, model and UTC month.
   // The service actor's dispatch alone is never consent.
   stage='CONSENT';
   const consent=await fetchAndVerifyOwnerCloudConsent({
@@ -95,7 +95,7 @@ export async function executeProtectedOpenRouterReview({
     headSha:preflight.target.headSha,
     model:env.REVIEWER_B_OPENROUTER_MODEL,now,fetchImpl
   });
-  if(!consent.ok||consent.globalMonthlyBudgetEur!==15)
+  if(!consent.ok||consent.globalMonthlyBudgetUsd!==13)
     deny('CLOUD_OWNER_SPEND_OR_EGRESS_NOT_PROVEN');
   // Provider billing may have happened even if the native review failed.
   // Reject workflow reruns, manual dispatch and duplicate service commands
@@ -110,14 +110,21 @@ export async function executeProtectedOpenRouterReview({
   if(requestProof.ok!==true||requestProof.uniqueFirstAttempt!==true||
      requestProof.maySpend!==false)
     deny('CLOUD_DUPLICATE_OR_UNVERIFIED_PAID_ATTEMPT');
-  // Owner consent is separate from independently authenticated OpenRouter-only spend.
-  // This OpenRouter-only EUR15 reservation is not implemented. Block BEFORE
-  // billable POST; never elevate consent to global ledger proof.
+  // Unique first attempt and owner consent must precede even the provider
+  // read-only budget preflight. No PRIVATE POST before same-key monthly cap.
   stage='OPENROUTER_BUDGET';
+  const providerPreflight=await preflightOpenRouterKey({
+    apiKey:env.REVIEWER_B_OPENROUTER_API_KEY,
+    model:env.REVIEWER_B_OPENROUTER_MODEL,fetchImpl:cloudFetchImpl
+  });
   const budget=assessAuthenticatedOpenRouterSpendAuthorization({
+    apiKey:env.REVIEWER_B_OPENROUTER_API_KEY,
+    preflight:providerPreflight,
     prNumber:issuePr,headSha:preflight.target.headSha,
     model:env.REVIEWER_B_OPENROUTER_MODEL,
-    consentVerified:consent.ok,now
+    consentVerified:consent.ok,
+    uniqueFirstAttempt:requestProof.uniqueFirstAttempt,
+    now
   });
   if(budget.verified!==true||budget.maySpend!==true)
     deny('CLOUD_OPENROUTER_ONLY_BUDGET_NOT_PROVEN');

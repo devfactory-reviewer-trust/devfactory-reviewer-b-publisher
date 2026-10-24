@@ -72,7 +72,7 @@ test('owner exact model and UTC month consent accepted once',()=>{
  const out=assessOwnerCloudConsent({items:[comment()],prNumber:PR,
    headSha:HEAD,model:MODEL,month,now:NOW});
  assert.equal(out.ok,true);
- assert.equal(out.globalMonthlyBudgetEur,15);
+ assert.equal(out.globalMonthlyBudgetUsd,13);
  assert.equal(out.independentReviewVerified,false);
 });
 test('owner consent is not transferable to another HEAD or model',()=>{
@@ -157,4 +157,19 @@ test('large valid cloud reports remain publishable within the GitHub body limit'
   findingCount:128,privateCanonicalReportBytes:report},runId:RUN});
  assert.ok(out.body.length<=12000);
  assert.match(out.body,/Semantic findings: 128/);
+});
+
+test('new native monthly split requires exact budget13usd owner consent, not historical budget15eur',()=>{
+ const exact='/devfactory-openrouter-consent '+PR+' '+HEAD+' '+MODEL+' '+month+' budget13usd';
+ assert.equal(formatExactOwnerCloudConsent(PR,HEAD,MODEL,month),exact);
+ const valid=assessOwnerCloudConsent({
+  items:[comment({body:exact})],prNumber:PR,headSha:HEAD,model:MODEL,month,now:NOW
+ });
+ assert.equal(valid.ok,true);
+ assert.equal(valid.globalMonthlyBudgetUsd,13);
+ const stale=assessOwnerCloudConsent({
+  items:[comment({body:exact.replace('budget13usd','budget15eur')})],
+  prNumber:PR,headSha:HEAD,model:MODEL,month,now:NOW
+ });
+ assert.equal(stale.ok,false);
 });
