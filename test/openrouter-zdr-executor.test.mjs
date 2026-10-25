@@ -99,7 +99,7 @@ test('month cap validated but BYOK toggle false is not relevant for no BYOK requ
 });
 test('wrong reset, unlimited and exhausted keys are rejected',()=>{
  for(const changes of [{limit_reset:'daily'},{limit:null},
-  {limit:2},{limit_remaining:0.01},{limit_remaining:-1},{usage_monthly:-2}])
+  {limit:3.5},{limit_remaining:0.01},{limit_remaining:-1},{usage_monthly:-2}])
   assert.equal(assessOpenRouterMonthlyKey(keyInfo(changes)).ok,false);
 });
 test('ZDR public catalogue strict price and structured-output capability',()=>{
@@ -329,4 +329,27 @@ test('invalid accounting, envelope and oversized token usage remain rejected',as
   }),new RegExp(code));
   assert.equal(net.postCount(),1);
  }
+});
+
+test('native Reviewer B key cap of 3 USD authenticates only its own fresh preflight',async()=>{
+ const net=mockedNetwork({keyOverrides:{limit:3,limit_remaining:2.85,usage_monthly:0.15}});
+ const p=await preflightOpenRouterKey({apiKey:K,fetchImpl:net.fetchImpl});
+ const {verifyAuthenticatedOpenRouterNativeCap}=await import('../scripts/openrouter-zdr-executor.mjs');
+ const args={apiKey:K,preflight:p,model:OPENROUTER_MODEL_IDS[0],maxMonthlyUsd:3};
+ assert.equal(verifyAuthenticatedOpenRouterNativeCap(args),true);
+ assert.equal(verifyAuthenticatedOpenRouterNativeCap({...args,apiKey:K+'wrong'}),false);
+ assert.equal(verifyAuthenticatedOpenRouterNativeCap({...args,preflight:{...p}}),false);
+ assert.equal(verifyAuthenticatedOpenRouterNativeCap({...args,model:OPENROUTER_MODEL_IDS[1]}),false);
+ const realNow=Date.now;
+ try{
+  Date.now=()=>realNow()+120001;
+  assert.equal(verifyAuthenticatedOpenRouterNativeCap(args),false);
+ }finally{Date.now=realNow}
+ assert.equal(net.postCount(),0);
+});
+
+test('native key preflight refuses above 3 USD cap and never sends billable POST',async()=>{
+ const net=mockedNetwork({keyOverrides:{limit:3.01,limit_remaining:3,usage_monthly:0.01}});
+ await assert.rejects(()=>preflightOpenRouterKey({apiKey:K,fetchImpl:net.fetchImpl}),/OR_MONTHLY_KEY_BUDGET_NOT_PROVEN/);
+ assert.equal(net.postCount(),0);
 });

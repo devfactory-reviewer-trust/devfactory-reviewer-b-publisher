@@ -108,7 +108,7 @@ export function prepareOpenRouterBoundedRequest({plan,model=OPENROUTER_MODEL_IDS
 export function assessOpenRouterMonthlyKey(info){
  const k=info?.data;
  if(!k||typeof k!=='object'||k.limit_reset!=='monthly'||
-    typeof k.limit!=='number'||k.limit<0.01||k.limit>1||
+    typeof k.limit!=='number'||k.limit<0.01||k.limit>3||
     typeof k.limit_remaining!=='number'||!Number.isFinite(k.limit_remaining)||
     k.limit_remaining<0.05||k.limit_remaining>k.limit||
 
@@ -158,6 +158,29 @@ export async function preflightOpenRouterKey({apiKey,model=OPENROUTER_MODEL_IDS[
  return proof;
 }
 /**
+ * Authenticate the native Reviewer B monthly key ceiling. Proofs may only
+ * originate from this module's strict read-only provider preflight. Caller
+ * booleans, object copies and arbitrary timestamps cannot grant spending.
+ */
+export function verifyAuthenticatedOpenRouterNativeCap({
+ apiKey,preflight,model=OPENROUTER_MODEL_IDS[0],maxMonthlyUsd=3
+}={}){
+ if(maxMonthlyUsd!==3||typeof apiKey!=='string'||
+    !/^sk-or-[A-Za-z0-9_-]{20,200}$/.test(apiKey)||
+    !preflight?.ok||preflight.model!==model||
+    !Object.hasOwn(PRICES,model)||
+    !Number.isFinite(preflight.monthlyLimitUsd)||
+    preflight.monthlyLimitUsd<0.01||preflight.monthlyLimitUsd>3||
+    !Number.isFinite(preflight.remainingUsd)||
+    preflight.remainingUsd<0.05||
+    preflight.remainingUsd>preflight.monthlyLimitUsd||
+    preflight.expiresAfterMs!==120000)return false;
+ const proof=KEY_PROOFS.get(preflight);
+ const age=proof?Date.now()-proof.time:NaN;
+ return !!proof&&Number.isFinite(age)&&age>=0&&age<=120000&&
+   proof.keyHash===DIGEST(apiKey);
+}
+/**
  * One authorized PRIVATE request, using only the preflighted key and plan.
  * The existing LOCAL validator is used for JSON + exact source-line anchors
  * as a PURE parser. We never describe this model as local, and return no
@@ -175,7 +198,7 @@ export async function executeOpenRouterShard({
  if(authenticatedGlobalBudgetVerified!==true)
     deny('OR_GLOBAL_BUDGET_NOT_VERIFIED');
  if(!preflight?.ok||preflight.model!==model||preflight.remainingUsd<0.05||
-    preflight.monthlyLimitUsd>1||preflight.expiresAfterMs!==120000)
+    preflight.monthlyLimitUsd>3||preflight.expiresAfterMs!==120000)
     deny('OR_PREFLIGHT_PROOF_INVALID');
  const proof=KEY_PROOFS.get(preflight);
  if(!proof||Date.now()-proof.time<0||Date.now()-proof.time>120000||

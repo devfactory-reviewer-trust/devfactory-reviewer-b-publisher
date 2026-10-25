@@ -1,0 +1,48 @@
+name: Reviewer B - Existing OpenRouter key monthly cap READ ONLY
+
+# Manual protected diagnostic, not a semantic review or production approval.
+# Uses the existing $3 GitHub environment secret. No paid POST, no keys created.
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  existing-key-native-cap:
+    name: Read ONLY existing $3 key cap and public ZDR model candidate
+    if: ${{ github.repository == 'devfactory-reviewer-trust/devfactory-reviewer-b-publisher' && github.ref == 'refs/heads/main' && github.actor == 'devfactory-reviewer-service' && github.event_name == 'workflow_dispatch' && github.run_attempt == 1 }}
+    environment: reviewer-b-publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Fetch exact protected main source without any credentials
+        shell: bash
+        env:
+          PUB_REPO: ${{ github.repository }}
+          PUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$PUB_REPO" = 'devfactory-reviewer-trust/devfactory-reviewer-b-publisher'
+          [[ "$PUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          mkdir source
+          curl --fail --silent --show-error --location --retry 0 \
+            --proto '=https' --proto-redir '=https' \
+            --max-time 45 --max-filesize 8388608 \
+            --header 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$PUB_REPO/tarball/$PUB_SHA" \
+            --output "$RUNNER_TEMP/reviewer-b-key-check-source.tar.gz"
+          tar -xzf "$RUNNER_TEMP/reviewer-b-key-check-source.tar.gz" \
+            -C source --strip-components=1
+          test -f source/scripts/openrouter-existing-key-readonly-diagnostic.mjs
+      - name: Node 24 for bounded GET-only provider verification
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify existing protected key with two GETs and no PRIVATE diff
+        shell: bash
+        env:
+          REVIEWER_B_OPENROUTER_API_KEY: ${{ secrets.REVIEWER_B_OPENROUTER_API_KEY }}
+        run: |
+          set -euo pipefail
+          cd source
+          node scripts/openrouter-existing-key-readonly-diagnostic.mjs
