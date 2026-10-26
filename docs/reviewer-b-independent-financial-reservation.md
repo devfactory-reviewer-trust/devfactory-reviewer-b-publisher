@@ -32,6 +32,9 @@ The protected `reviewer-b-publish` environment must separately provide:
   *public* signing key, from independent owner-reviewed provisioning.
 - `REVIEWER_B_FINANCIAL_SIGNER_FINGERPRINT_SHA256`: SHA-256 hex of that
   key's DER SPKI, pinned out of band (never accepted from the receipt).
+- `REVIEWER_B_FINANCIAL_BROKER_TOKEN`: independently generated bearer credential
+  configured only in the protected Publisher environment and Cloudflare Worker.
+  This secret is never logged, embedded in the code or passed to OpenRouter.
 
 Do not invent a public endpoint, commit credentials, install a signer in the
 Publisher, enable a workflow, or trigger a paid test to satisfy these fields.

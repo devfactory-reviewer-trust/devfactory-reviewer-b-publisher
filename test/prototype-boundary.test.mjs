@@ -27,7 +27,7 @@ test('no workflow has access to private App secrets, write token or privileged t
   const files=readdirSync(workflows).filter(name=>/\.ya?ml$/.test(name));
   assert.ok(files.length>=2);
   for(const filename of files){
-    const contents=readFileSync(path.join(workflows,filename),'utf8');
+    const contents=readFileSync(path.join(workflows,filename),'utf8').replace(/\r\n/g,'\n');
     // GitHub job-level permissions can OVERRIDE a safe workflow-level block.
     // Permit exactly one root permissions mapping; reject ANY nested one.
     assert.equal((contents.match(/^permissions\s*:/gm)||[]).length,1);
@@ -244,10 +244,11 @@ test('no workflow has access to private App secrets, write token or privileged t
       assert.ok(contents.indexOf('node source/scripts/protected-openrouter-review-request.mjs')<
         contents.indexOf('node scripts/protected-real-openrouter-review.mjs'));
       assert.match(contents,/^  group: reviewer-b-protected-real-semantic-manual$/m);
-      assert.equal((contents.match(/secrets\./g)||[]).length,6);
+      assert.equal((contents.match(/secrets\./g)||[]).length,7);
       assert.match(contents,/secrets\.REVIEWER_B_FINANCIAL_AUTHORITY_URL/);
       assert.match(contents,/secrets\.REVIEWER_B_FINANCIAL_SIGNER_PUBLIC_KEY_PEM/);
       assert.match(contents,/secrets\.REVIEWER_B_FINANCIAL_SIGNER_FINGERPRINT_SHA256/);
+      assert.match(contents,/secrets\.REVIEWER_B_FINANCIAL_BROKER_TOKEN/);
       assert.match(contents,/secrets\.REVIEWER_B_OPENROUTER_API_KEY/);
       assert.match(contents,/secrets\.REVIEWER_B_CLOUD_POLICY_READY/);
       assert.match(contents,/secrets\.REVIEWER_B_GITHUB_APP_PRIVATE_KEY_PEM/);

@@ -83,7 +83,13 @@ export function validateIndependentFinancialConfig(config={}){
   const endpoint=trustedEndpoint(config.endpoint);
   const key=keyFromPinnedPolicy(config.trustedSignerPublicKeyPem,
     config.trustedSignerFingerprintSha256);
-  return Object.freeze({ok:true,endpoint,signer:key});
+  // A signed receipt is not proof that an unauthenticated caller is allowed
+  // to reserve; both endpoint and Publisher require the same protected token.
+  if(typeof config.authorizationToken!=='string'||
+     !/^[A-Za-z0-9_-]{40,256}$/.test(config.authorizationToken))
+    deny('OR_FINANCIAL_BROKER_AUTH_UNCONFIGURED');
+  return Object.freeze({ok:true,endpoint,signer:key,
+    authorizationToken:config.authorizationToken});
  }catch{return Object.freeze({ok:false})}
 }
 export async function reserveIndependentFinancialShard({
@@ -99,7 +105,8 @@ export async function reserveIndependentFinancialShard({
   r=await fetchImpl(ready.endpoint,{
    method:'POST',redirect:'error',cache:'no-store',
    signal:AbortSignal.timeout(12000),
-   headers:{'Content-Type':'application/json',Accept:'application/json'},
+   headers:{'Content-Type':'application/json',Accept:'application/json',
+    Authorization:'Bearer '+ready.authorizationToken},
    body:JSON.stringify(expected)
   });
  }catch{deny('OR_FINANCIAL_RESERVATION_UNCERTAIN_NO_RETRY')}
@@ -132,7 +139,7 @@ export async function reserveIndependentFinancialShard({
     !SIG.test(receipt.signature||'')||
     !Number.isSafeInteger(receipt.expiresAtMs)||
     receipt.expiresAtMs<=atMs||
-    receipt.expiresAtMs>atMs+60_000)
+    receipt.expiresAtMs>atMs+75_000)
    deny('OR_FINANCIAL_RESERVATION_UNVERIFIED');
  for(const [key,value] of Object.entries(expected))
   if(receipt[key]!==value)deny('OR_FINANCIAL_RESERVATION_SCOPE_MISMATCH');
@@ -148,12 +155,13 @@ export async function reserveIndependentFinancialShard({
    reservationId:receipt.reservationId});
  return proof;
 }
-export function consumeIndependentFinancialShard({proof,context,now=Date.now()}={}){
+export function consumeIndependentFinancialShard({proof,context,now=Date.now}={}){
  const verified=proof&&PROOFS.get(proof);
  if(!verified||CONSUMED.has(proof))
    deny('OR_FINANCIAL_RESERVATION_REQUIRED');
  const {expected,expiresAtMs}=verified;
- const at=Number.isSafeInteger(now)?now:NaN;
+ const actualNow=typeof now==='function'?now():now;
+ const at=Number.isSafeInteger(actualNow)?actualNow:NaN;
  if(!Number.isSafeInteger(at)||at>=expiresAtMs||
     at<new Date(expected.monthUtc+'-01T00:00:00Z').getTime())
    deny('OR_FINANCIAL_RESERVATION_EXPIRED');

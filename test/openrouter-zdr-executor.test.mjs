@@ -30,7 +30,8 @@ const signer=generateKeyPairSync('ed25519');
 const publicPem=signer.publicKey.export({format:'pem',type:'spki'});
 const financialConfig={endpoint:'https://trusted-finance.example.org/v1/financial-reservations/openrouter-reviewer-b',
  trustedSignerPublicKeyPem:publicPem,
- trustedSignerFingerprintSha256:hash(signer.publicKey.export({format:'der',type:'spki'}))};
+ trustedSignerFingerprintSha256:hash(signer.publicKey.export({format:'der',type:'spki'})),
+ authorizationToken:'t'.repeat(64)};
 function fakeFinancialAuthority({mutateReceipt=null,throwOnReserve=false,
  corruptSignature=false}={}){
  const requests=[];
@@ -38,6 +39,7 @@ function fakeFinancialAuthority({mutateReceipt=null,throwOnReserve=false,
   requests.push({url,options});
   assert.equal(url,financialConfig.endpoint);
   assert.equal(options.method,'POST');
+  assert.equal(options.headers.Authorization,'Bearer '+financialConfig.authorizationToken);
   if(throwOnReserve)throw Error('DISCONNECTED');
   const req=JSON.parse(options.body);
   const receipt={...req,status:'RESERVED_POSSIBLY_BILLED_NO_AUTO_REFUND',
