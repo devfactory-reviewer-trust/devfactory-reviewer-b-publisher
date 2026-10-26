@@ -68,7 +68,7 @@ async function jsonGET(url,token,fetchImpl){
  if(r?.status!==200||r.url!==url||r.redirected!==false||
     !/^application\/(?:vnd\.github\+)?json(?:\s*;|$)/i.test(r.headers?.get('content-type')||''))
     deny();
- const len=r.headers.get('content-length');
+ const len=r.headers?.get('content-length');
  if(len!=null&&(!/^\d+$/.test(len)||Number(len)>64*1024))deny();
  let content;
  try{content=await r.text()}catch{deny()}
@@ -106,7 +106,7 @@ async function readVerifiedJobLog(token,fetchImpl){
  }catch{deny()}
  if(log?.status!==200||log.url!==location||log.redirected!==false||
     !/^text\/plain(?:\s*;|$)/i.test(log.headers?.get('content-type')||''))deny();
- const size=log.headers.get('content-length');
+ const size=log.headers?.get('content-length');
  if(size!=null&&(!/^\d+$/.test(size)||Number(size)>64*1024))deny();
  let raw;
  try{raw=await log.text()}catch{deny()}
