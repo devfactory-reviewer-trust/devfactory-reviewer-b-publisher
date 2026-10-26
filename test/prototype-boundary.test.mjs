@@ -220,7 +220,11 @@ test('no workflow has access to private App secrets, write token or privileged t
       // Exact protected service-owned CLOUD lane; public PR tests never
       // run inference, retrieve secrets, read private code, or publish.
       // Owner model/HEAD/month consent and protected policy secret are required.
-      assert.match(contents,/^permissions: \{\}\n/m);
+      // Recovery reads only GitHub Actions' authoritative old run/log;
+      // never grant repository contents, issues, PR writes or id-token.
+      assert.match(contents,/^permissions:\n  actions: read(?:\s*#.*)?\n/m);
+      assert.match(contents,/REVIEWER_B_PUBLISHER_ACTIONS_READ_TOKEN: \$\{\{ github\.token \}\}/);
+      assert.doesNotMatch(contents,/^\s{2}(?:contents|issues|pull-requests|id-token|attestations):/m);
       assert.match(contents,/^on:\n  workflow_dispatch:\n/m);
       assert.match(contents,/environment:\s*reviewer-b-publish/);
       assert.match(contents,/github\.actor == 'devfactory-reviewer-service'/);
