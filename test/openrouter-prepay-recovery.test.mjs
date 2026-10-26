@@ -17,7 +17,7 @@ const COMMENT_URL=API+'/issues/62/comments?per_page=100&page=1';
 const RUN_URL=API+'/actions/runs/40350809327';
 const JOBS_URL=RUN_URL+'/jobs?per_page=100';
 const LOG_URL=API+'/actions/jobs/121670017999/logs';
-const SIGNED='https://productionresultssa.blob.core.windows.net/logs/download?sig=TEST';
+const SIGNED='https://productionresultssa7.blob.core.windows.net/logs/download?sig=TEST';
 const old={id:6420110835,user:{login:'devfactory-reviewer-service',id:340477389},
  body:'/review-b-openrouter 955 '+HEAD+' '+MODEL,created_at:'2026-10-26T15:35:22Z'};
 const fresh={id:6421234567,user:{...old.user},body:EXACT_RECOVERY_COMMAND,
@@ -37,15 +37,17 @@ const LOG='2026-10-26T15:37:02.9788155Z OPENROUTER_PROTECTED_PREFLIGHT_FAILED_CL
  '2026-10-26T15:37:02.9788991Z OPENROUTER_PROTECTED_CLOUD_PREFLIGHT_FAILED_CLOSED\n'+
  '##[error]Process completed with exit code 1.\n';
 function response(url,content,{status=200,contentType='application/json',
- location=null,authorization=false}={}){
+ location=null,authorization=false,contentLength=null}={}){
  return {status,redirected:false,url,headers:{get(k){
    if(k==='content-type')return contentType;
    if(k==='location')return location;
+   if(k==='content-length')return contentLength;
    return null;
  }},text:async()=>typeof content==='string'?content:JSON.stringify(content)};
 }
 function mock({comments=[old,fresh],run=RUN,jobs={total_count:1,jobs:[JOB]},log=LOG,
- logLocation=SIGNED,logContentType='text/plain'}={}){
+ logLocation=SIGNED,logContentType='text/plain',logContentLength=null,
+ logResponseUrl=logLocation}={}){
  const requested=[];
  const fetchImpl=async(url,opts)=>{
   requested.push({url,method:opts.method,authorized:Boolean(opts.headers?.Authorization)});
@@ -53,7 +55,8 @@ function mock({comments=[old,fresh],run=RUN,jobs={total_count:1,jobs:[JOB]},log=
   if(url===RUN_URL)return response(url,run);
   if(url===JOBS_URL)return response(url,jobs);
   if(url===LOG_URL)return response(url,'',{status:302,location:logLocation});
-  if(url===logLocation)return response(url,log,{contentType:logContentType});
+  if(url===logLocation)return response(logResponseUrl,log,
+   {contentType:logContentType,contentLength:logContentLength});
   throw Error('unexpected URL');
  };
  return {fetchImpl,requested};
@@ -136,7 +139,12 @@ test('wrong old run, missing job, missing preflight marker, redirect abuse alway
   {log:LOG.replace('PREFLIGHT_FAILED_CLOSED','OPENROUTER_FAILED_CLOSED')},
   {log:LOG+'OPENROUTER_PROTECTED_OPENROUTER_FAILED_CLOSED'},
   {logLocation:'https://attacker.invalid/steal'},
-  {logContentType:'text/html'}
+  {logLocation:'https://eviltenant.blob.core.windows.net/logs/download?sig=TEST'},
+  {logLocation:'https://productionresultssa7.blob.core.windows.net:443/logs/download?sig=TEST'},
+  {logContentType:'text/html'},
+  {logContentLength:String(64*1024+1)},
+  {log:'x'.repeat(64*1024+1)},
+  {logResponseUrl:SIGNED.replace('productionresultssa7','PRODUCTIONRESULTSSA7')}
  ];
  for(const config of scenarios){
   await assert.rejects(()=>fetchAndVerifyUniqueOpenRouterServiceRequest({
