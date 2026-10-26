@@ -152,3 +152,18 @@ test('recovery cannot use an ordinary new command and cannot alter other PRs',()
  assert.equal(assessUniqueOpenRouterServiceRequest({...ARG,commentId:fresh.id,
   model:'qwen/qwen3.6-35b-a3b',comments:[old,fresh]}).ok,false);
 });
+
+test('missing GitHub or signed-blob headers are denied with fail-closed error', async()=>{
+ for(const target of [RUN_URL,SIGNED]){
+  const m=mock();
+  const fetchImpl=async(url,opts)=>{
+   const response=await m.fetchImpl(url,opts);
+   if(url===target)return {...response,headers:null};
+   return response;
+  };
+  await assert.rejects(()=>verifyOneTimeRecoveryPrepayEvidence({
+    apiReadToken:'ghu_test_read_only_token_123456789',
+    fetchImpl,
+  }),/OR_PREPAY_RECOVERY_NOT_PROVEN/);
+ }
+});
