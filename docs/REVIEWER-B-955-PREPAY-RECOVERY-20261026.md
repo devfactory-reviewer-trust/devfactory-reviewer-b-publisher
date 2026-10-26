@@ -42,8 +42,15 @@ retry the old workflow run and never post a second ordinary command.**
    The request is only admissible if **one original service request
    and one recovery** exist for this PR/HEAD, in that order. Additional
    matches are denied. A workflow **run_attempt != 1** is denied.
-5. Require fresh, same-head owner private-source egress consent,
-   the original protected environment owner approval, the real
+5. Require fresh, same-head owner private-source egress consent.
+   The original consent comment `6420081409` remains immutable, and its
+   four-hour expiry is **never waived**. If it has expired, the owner must
+   explicitly publish ONE differently worded renewal comment on PR #955:
+   `/devfactory-openrouter-consent-renew 955 dd8bcdfebbfed5e2193c9328930499801ae916b5 qwen/qwen3-coder-30b-a3b-instruct 2026-10 budget13usd abort40350809327`.
+   The verifier checks ownership, exact context, chronological ordering,
+   freshness and uniqueness, rejecting second renewals or other PRs.
+   No assistant, service actor or CI run may infer that fresh consent.
+   Then require the original protected environment owner approval, the real
    OpenRouter key's monthly 3 USD ceiling, the ZDR catalogue, and
    the existing native provider spend gate **before any private POST**.
    No synthetic payment credit or provider charge suppression is granted.
