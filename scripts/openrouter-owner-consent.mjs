@@ -11,6 +11,15 @@ const MONTH=/^20[2-9][0-9]-(0[1-9]|1[0-2])$/;
 const deny=c=>{throw Error(c)};
 const MSG=(pr,head,model,month)=>
  '/devfactory-openrouter-consent '+pr+' '+head+' '+model+' '+month+' budget13usd';
+// Legacy exact-head authorization remains immutable. A fresh, separately
+// posted renewal is accepted for the ONE audited pre-payment recovery only.
+const RECOVERY=Object.freeze({prNumber:955,
+ headSha:'dd8bcdfebbfed5e2193c9328930499801ae916b5',
+ model:'qwen/qwen3-coder-30b-a3b-instruct',month:'2026-10',
+ abortedRunId:40350809327});
+const RENEW=(pr,head,model,month)=>
+ '/devfactory-openrouter-consent-renew '+pr+' '+head+' '+model+' '+month+
+ ' budget13usd abort'+RECOVERY.abortedRunId;
 const API='https://api.github.com/repos/'+REPO+'/issues/';
 const MAX_BYTES=128*1024;
 export function assessOwnerCloudConsent({items,prNumber,headSha,model,month,now}={}){
@@ -24,13 +33,31 @@ export function assessOwnerCloudConsent({items,prNumber,headSha,model,month,now}
  const matching=items.filter(c=>c?.body===expected);
  if(matching.length!==1)
     return Object.freeze({ok:false,reason:'OR_CONSENT_MISSING_OR_DUPLICATE'});
- const c=matching[0],created=Date.parse(c?.created_at);
- if(!Number.isSafeInteger(c?.id)||c.id<1||
-    c.user?.login!==OWNER||c.user?.id!==OWNER_ID||
-    !Number.isFinite(created)||created>now+60_000||
-    now-created>4*60*60*1000||
+ const original=matching[0],originalCreated=Date.parse(original?.created_at);
+ const authenticatedOwner=c=>Number.isSafeInteger(c?.id)&&c.id>0&&
+   c.user?.login===OWNER&&c.user?.id===OWNER_ID;
+ if(!authenticatedOwner(original)||!Number.isFinite(originalCreated)||
+    originalCreated>now+60_000||
     new Date(now).toISOString().slice(0,7)!==month)
     return Object.freeze({ok:false,reason:'OR_CONSENT_OWNER_OR_FRESHNESS_UNVERIFIED'});
+ let c=original;
+ const recoveryScope=prNumber===RECOVERY.prNumber&&headSha===RECOVERY.headSha&&
+   model===RECOVERY.model&&month===RECOVERY.month;
+ if(recoveryScope){
+   const renewals=items.filter(v=>v?.body===RENEW(prNumber,headSha,model,month));
+   if(renewals.length>1)
+     return Object.freeze({ok:false,reason:'OR_CONSENT_RENEWAL_DUPLICATE'});
+   if(renewals.length===1){
+     const renewal=renewals[0],time=Date.parse(renewal?.created_at);
+     if(!authenticatedOwner(renewal)||!Number.isFinite(time)||
+        time<=originalCreated||time>now+60_000)
+       return Object.freeze({ok:false,reason:'OR_CONSENT_RENEWAL_UNTRUSTED'});
+     c=renewal;
+   }
+ }
+ const created=Date.parse(c?.created_at);
+ if(now-created>4*60*60*1000)
+   return Object.freeze({ok:false,reason:'OR_CONSENT_OWNER_OR_FRESHNESS_UNVERIFIED'});
  return Object.freeze({ok:true,authorizedPr:prNumber,authorizedHead:headSha,
   authorizedModel:model,authorizedMonth:month,globalMonthlyBudgetUsd:13,
   ownerCommentId:c.id,independentReviewVerified:false,mayMerge:false});
@@ -73,4 +100,5 @@ export async function fetchAndVerifyOwnerCloudConsent({
  if(!result.ok)deny(result.reason);
  return result;
 }
-export {MSG as formatExactOwnerCloudConsent};
+export {MSG as formatExactOwnerCloudConsent,
+ RENEW as formatOneTimeRecoveryOwnerConsent};
