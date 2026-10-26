@@ -115,6 +115,8 @@ test('protected workflow authenticates strict service request before PRIVATE cre
  assert.ok(request>0&&privateStep>request);
  assert.match(source,/REVIEWER_B_CLOUD_REQUEST_VERIFIED: \$\{\{ steps\.cloud_request\.outputs\.verified \}\}/);
  assert.match(source,/environment: reviewer-b-publish/);
- assert.match(source,/permissions: \{\}/);
+ assert.match(source,/^permissions:\n  actions: read(?:\s*#.*)?\n/m);
+ assert.match(source,/REVIEWER_B_PUBLISHER_ACTIONS_READ_TOKEN: \$\{\{ github\.token \}\}/);
+ assert.doesNotMatch(source,/\b(?:contents|issues|pull-requests|id-token|attestations):\s*write\b/);
  assert.match(source,/cancel-in-progress: false/);
 });
