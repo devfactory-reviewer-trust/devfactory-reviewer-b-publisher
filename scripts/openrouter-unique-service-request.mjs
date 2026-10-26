@@ -4,6 +4,7 @@
  * Old failed provider calls may have been billed without publishing a review.
  * This is defense in depth, NOT a monetary reservation or spend permit.
  */
+import {assessOneTimeRecoveryComments,isOneTimeRecoveryRequest,verifyOneTimeRecoveryPrepayEvidence} from './openrouter-prepay-recovery.mjs';
 const URL_BASE='https://api.github.com/repos/devfactory-reviewer-trust/devfactory-reviewer-b-publisher/issues/62/comments?per_page=100&page=';
 const SERVICE='devfactory-reviewer-service',SERVICE_ID=340477389;
 const CMD=/^\/review-b-openrouter ([1-9][0-9]{0,9}) ([0-9a-f]{40}) (qwen\/qwen3-coder-30b-a3b-instruct|qwen\/qwen3\.6-35b-a3b)$/;
@@ -39,6 +40,15 @@ export function assessUniqueOpenRouterServiceRequest({
     !Array.isArray(comments)||comments.length<1||
     comments.length>MAX_PAGES*PAGE_SIZE)
     return Object.freeze({ok:false,reason:'OR_UNIQUE_SERVICE_REQUEST_NOT_PROVEN'});
+ const requested=comments.find(c=>c?.id===commentId);
+ if(isOneTimeRecoveryRequest({prNumber,headSha,model,body:requested?.body})) {
+   const recovery=assessOneTimeRecoveryComments({comments,commentId,prNumber,headSha,model});
+   if(!recovery.ok)return Object.freeze({ok:false,reason:'OR_UNIQUE_SERVICE_REQUEST_NOT_PROVEN'});
+   // Candidate only! Historical authenticated GitHub job-log verification
+   // must still finish before this can become a billable first recovery.
+   return Object.freeze({ok:true,uniqueFirstAttempt:false,
+     oneTimeRecoveryCandidate:true,maySpend:false,mayMerge:false});
+ }
  const matches=comments.filter(c=>{
    const match=typeof c?.body==='string'?CMD.exec(c.body):null;
    return c?.user?.login===SERVICE&&c?.user?.id===SERVICE_ID&&
@@ -54,7 +64,7 @@ export function assessUniqueOpenRouterServiceRequest({
 
 export async function fetchAndVerifyUniqueOpenRouterServiceRequest({
  eventName,runAttempt,prNumber,headSha,model,commentId,
- fetchImpl=globalThis.fetch
+ actionsReadToken=null,fetchImpl=globalThis.fetch
 }={}){
  if(typeof fetchImpl!=='function'||eventName!=='issue_comment'||
     runAttempt!=='1'||!Number.isSafeInteger(commentId)||commentId<1)
@@ -102,5 +112,13 @@ export async function fetchAndVerifyUniqueOpenRouterServiceRequest({
  const assessment=assessUniqueOpenRouterServiceRequest({
   eventName,runAttempt,prNumber,headSha,model,commentId,comments:all});
  if(!assessment.ok)deny();
+ if(assessment.oneTimeRecoveryCandidate===true) {
+   // Old run metadata, exact job steps AND trusted GitHub-hosted logs
+   // jointly attest failure in PREFLIGHT, before any Qwen/provider call.
+   await verifyOneTimeRecoveryPrepayEvidence({apiReadToken:actionsReadToken,fetchImpl});
+   return Object.freeze({ok:true,uniqueFirstAttempt:true,
+     oneTimeRecoveryVerified:true,maySpend:false,mayMerge:false,
+     mayRetryAmbiguousRequest:false});
+ }
  return assessment;
 }
