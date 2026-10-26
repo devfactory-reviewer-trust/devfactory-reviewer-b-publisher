@@ -173,3 +173,38 @@ test('new native monthly split requires exact budget13usd owner consent, not his
  });
  assert.equal(stale.ok,false);
 });
+
+test('historical owner consent may be refreshed ONLY by one explicit exact-head prepay recovery attestation',async()=>{
+ const {formatOneTimeRecoveryOwnerConsent}=await import('../scripts/openrouter-owner-consent.mjs');
+ const pr=955,head='dd8bcdfebbfed5e2193c9328930499801ae916b5';
+ const model='qwen/qwen3-coder-30b-a3b-instruct',month='2026-10';
+ const now=Date.parse('2026-10-26T21:00:00Z');
+ const first={id:6420081409,user:{login:'deenkids7-dev',id:297379913},
+  created_at:'2026-10-26T15:34:05Z',
+  body:formatExactOwnerCloudConsent(pr,head,model,month)};
+ const renewal={...first,id:6421000000,created_at:'2026-10-26T20:30:00Z',
+  body:formatOneTimeRecoveryOwnerConsent(pr,head,model,month)};
+ const verify=items=>assessOwnerCloudConsent({
+  items,prNumber:pr,headSha:head,model,month,now});
+ assert.equal(verify([first]).ok,false,'old 4h consent cannot be silently reused');
+ const authorized=verify([first,renewal]);
+ assert.equal(authorized.ok,true);
+ assert.equal(authorized.ownerCommentId,renewal.id);
+ assert.equal(authorized.globalMonthlyBudgetUsd,13);
+ assert.equal(authorized.mayMerge,false);
+ for(const attack of [
+  [first,renewal,renewal],
+  [first,{...renewal,user:{login:'attacker',id:297379913}}],
+  [first,{...renewal,user:{login:'deenkids7-dev',id:5}}],
+  [first,{...renewal,body:renewal.body.replace('40350809327','40350809328')}],
+  [first,{...renewal,created_at:'2026-10-26T15:33:00Z'}],
+  [first,{...renewal,created_at:'2026-10-26T21:03:00Z'}],
+  [first,{...renewal,created_at:'2026-10-26T15:40:00Z'}],
+  [first,{...first,id:500,created_at:'2026-10-26T19:10:00Z'},renewal],
+ ]){
+  assert.equal(verify(attack).ok,false,JSON.stringify(attack.map(c=>c.id)));
+ }
+ const unrelated=assessOwnerCloudConsent({
+  items:[first,renewal],prNumber:956,headSha:head,model,month,now});
+ assert.equal(unrelated.ok,false);
+});
