@@ -192,19 +192,24 @@ test('historical owner consent may be refreshed ONLY by one explicit exact-head 
  assert.equal(authorized.ownerCommentId,renewal.id);
  assert.equal(authorized.globalMonthlyBudgetUsd,13);
  assert.equal(authorized.mayMerge,false);
- for(const attack of [
-  [first,renewal,renewal],
-  [first,{...renewal,user:{login:'attacker',id:297379913}}],
-  [first,{...renewal,user:{login:'deenkids7-dev',id:5}}],
-  [first,{...renewal,body:renewal.body.replace('40350809327','40350809328')}],
-  [first,{...renewal,created_at:'2026-10-26T15:33:00Z'}],
-  [first,{...renewal,created_at:'2026-10-26T21:03:00Z'}],
-  [first,{...renewal,created_at:'2026-10-26T15:40:00Z'}],
-  [first,{...first,id:500,created_at:'2026-10-26T19:10:00Z'},renewal],
+ for(const [attack,reason] of [
+  [[first,renewal,renewal],'OR_CONSENT_RENEWAL_DUPLICATE'],
+  [[first,{...renewal,user:{login:'attacker',id:297379913}}],'OR_CONSENT_RENEWAL_UNTRUSTED'],
+  [[first,{...renewal,user:{login:'deenkids7-dev',id:5}}],'OR_CONSENT_RENEWAL_UNTRUSTED'],
+  [[first,{...renewal,body:renewal.body.replace('40350809327','40350809328')}],'OR_CONSENT_OWNER_OR_FRESHNESS_UNVERIFIED'],
+  [[first,{...renewal,created_at:'2026-10-26T15:33:00Z'}],'OR_CONSENT_RENEWAL_UNTRUSTED'],
+  [[first,{...renewal,created_at:'2026-10-26T21:03:00Z'}],'OR_CONSENT_RENEWAL_UNTRUSTED'],
+  [[first,{...renewal,created_at:'2026-10-26T15:40:00Z'}],'OR_CONSENT_OWNER_OR_FRESHNESS_UNVERIFIED'],
+  [[first,{...first,id:500,created_at:'2026-10-26T19:10:00Z'},renewal],'OR_CONSENT_MISSING_OR_DUPLICATE'],
  ]){
-  assert.equal(verify(attack).ok,false,JSON.stringify(attack.map(c=>c.id)));
+  const out=verify(attack);
+  assert.equal(out.ok,false);
+  assert.equal(out.reason,reason,JSON.stringify(attack.map(c=>c.id)));
  }
  const unrelated=assessOwnerCloudConsent({
-  items:[first,renewal],prNumber:956,headSha:head,model,month,now});
+  items:[{...first,body:formatExactOwnerCloudConsent(956,head,model,month)},
+         {...renewal,body:formatOneTimeRecoveryOwnerConsent(956,head,model,month)}],
+  prNumber:956,headSha:head,model,month,now});
  assert.equal(unrelated.ok,false);
+ assert.equal(unrelated.reason,'OR_CONSENT_OWNER_OR_FRESHNESS_UNVERIFIED');
 });
