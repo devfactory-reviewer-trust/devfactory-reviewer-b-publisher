@@ -8,6 +8,7 @@
  * before any private source is sent to OpenRouter.
  */
 import {readFileSync,statSync,appendFileSync} from 'node:fs';
+import {EXACT_RECOVERY_COMMAND} from './openrouter-prepay-recovery.mjs';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 const REPO='devfactory-reviewer-trust/devfactory-reviewer-b-publisher';
@@ -50,8 +51,15 @@ export function resolveProtectedOpenRouterReviewRequest({
     typeof event.comment.body!=='string'||
     event.comment.body.length>170)deny();
  const match=CMD.exec(event.comment.body);
- if(!match)deny();
- return vetted({prNumber:match[1],headSha:match[2],model:match[3]});
+ if(match)return vetted({prNumber:match[1],headSha:match[2],model:match[3]});
+ // Only the one audited pre-payment historical failure is eligible for
+ // a second, one-shot service-owned recovery command. Readback and the
+ // authenticated old GitHub Actions log must still prove no provider POST.
+ if(event.comment.body===EXACT_RECOVERY_COMMAND)
+   return vetted({prNumber:'955',
+    headSha:'dd8bcdfebbfed5e2193c9328930499801ae916b5',
+    model:'qwen/qwen3-coder-30b-a3b-instruct'});
+ deny();
 }
 function main(){
  try{

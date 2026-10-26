@@ -105,7 +105,9 @@ export async function executeProtectedOpenRouterReview({
     eventName:env.GITHUB_EVENT_NAME,runAttempt:env.GITHUB_RUN_ATTEMPT,
     prNumber:issuePr,headSha:preflight.target.headSha,
     model:env.REVIEWER_B_OPENROUTER_MODEL,
-    commentId:Number(env.REVIEWER_B_REQUEST_COMMENT_ID),fetchImpl
+    commentId:Number(env.REVIEWER_B_REQUEST_COMMENT_ID),
+    actionsReadToken:env.REVIEWER_B_PUBLISHER_ACTIONS_READ_TOKEN,
+    fetchImpl
   });
   if(requestProof.ok!==true||requestProof.uniqueFirstAttempt!==true||
      requestProof.maySpend!==false)
