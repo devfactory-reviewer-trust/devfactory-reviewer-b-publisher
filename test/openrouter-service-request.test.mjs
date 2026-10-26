@@ -118,5 +118,10 @@ test('protected workflow authenticates strict service request before PRIVATE cre
  assert.match(source,/^permissions:\n  actions: read(?:\s*#.*)?\n/m);
  assert.match(source,/REVIEWER_B_PUBLISHER_ACTIONS_READ_TOKEN: \$\{\{ github\.token \}\}/);
  assert.doesNotMatch(source,/\b(?:contents|issues|pull-requests|id-token|attestations):\s*write\b/);
+ assert.equal((source.match(/^permissions\s*:/gm)||[]).length,1);
+ assert.doesNotMatch(source,/^[ \t]+permissions\s*:/m);
+ const granted=source.match(/^permissions:\n((?: {2}[^\n]+\n)+)/m)?.[1];
+ assert.match(granted||'',/^  actions: read(?:\s*#.*)?\n$/);
+ assert.doesNotMatch(source,/\bwrite-all\b/);
  assert.match(source,/cancel-in-progress: false/);
 });
