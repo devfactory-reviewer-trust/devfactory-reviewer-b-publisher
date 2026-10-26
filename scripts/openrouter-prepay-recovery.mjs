@@ -66,7 +66,8 @@ async function jsonGET(url,token,fetchImpl){
     'User-Agent':'devfactory-prepay-recovery-verifier'}});
  }catch{deny()}
  if(r?.status!==200||r.url!==url||r.redirected!==false||
-    !/^application\/(?:vnd\.github\+)?json(?:\s*;|$)/i.test(r.headers?.get('content-type')||''))
+    typeof r.headers?.get!=='function'||
+    !/^application\/(?:vnd\.github\+)?json(?:\s*;|$)/i.test(r.headers.get('content-type')||''))
     deny();
  const len=r.headers?.get('content-length');
  if(len!=null&&(!/^\d+$/.test(len)||Number(len)>64*1024))deny();
@@ -77,12 +78,14 @@ async function jsonGET(url,token,fetchImpl){
 }
 function safeBlobUrl(raw){
  try{
+  // Authenticated historical 302 uses THIS exact GitHub Actions blob host.
+  // Prefix rejects explicit :443 (URL() would silently strip default ports).
+  const host='productionresultssa7.blob.core.windows.net';
+  if(typeof raw!=='string'||!raw.startsWith('https://'+host+'/')||
+     raw.length>4096)return false;
   const u=new URL(raw);
-  return u.protocol==='https:'&&u.username===''&&u.password===''&&
-   u.hash===''&&
-   (/(^|\.)blob\.core\.windows\.net$/i.test(u.hostname)||
-    /(^|\.)actions\.githubusercontent\.com$/i.test(u.hostname))&&
-   raw.length<=4096;
+  return u.protocol==='https:'&&u.hostname===host&&u.port===''&&
+   u.username===''&&u.password===''&&u.hash==='';
  }catch{return false}
 }
 async function readVerifiedJobLog(token,fetchImpl){
@@ -94,8 +97,9 @@ async function readVerifiedJobLog(token,fetchImpl){
    headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json',
     'User-Agent':'devfactory-prepay-recovery-verifier'}});
  }catch{deny()}
- if(r?.status!==302||r.url!==url||r.redirected!==false)deny();
- const location=r.headers?.get('location');
+ if(r?.status!==302||r.url!==url||r.redirected!==false||
+    typeof r.headers?.get!=='function')deny();
+ const location=r.headers.get('location');
  if(!safeBlobUrl(location))deny();
  let log;
  try{
@@ -105,7 +109,8 @@ async function readVerifiedJobLog(token,fetchImpl){
     'User-Agent':'devfactory-prepay-recovery-verifier'}});
  }catch{deny()}
  if(log?.status!==200||log.url!==location||log.redirected!==false||
-    !/^text\/plain(?:\s*;|$)/i.test(log.headers?.get('content-type')||''))deny();
+    typeof log.headers?.get!=='function'||
+    !/^text\/plain(?:\s*;|$)/i.test(log.headers.get('content-type')||''))deny();
  const size=log.headers?.get('content-length');
  if(size!=null&&(!/^\d+$/.test(size)||Number(size)>64*1024))deny();
  let raw;
@@ -148,9 +153,9 @@ export async function verifyOneTimeRecoveryPrepayEvidence({
  const success=['Fetch exact protected PUBLIC publisher source (no untrusted checkout)',
    'Verify exact service-owned cloud request BEFORE PRIVATE credentials'];
  const failure='Protected exact-head owner-consented cloud analysis';
- if(success.some(name=>!job.steps.some(s=>s.name===name&&
-       s.conclusion==='success'))||
-    !job.steps.some(s=>s.name===failure&&s.conclusion==='failure'))
+ if(success.some(name=>!job.steps.some(s=>s?.name===name&&
+       s?.conclusion==='success'))||
+    !job.steps.some(s=>s?.name===failure&&s?.conclusion==='failure'))
    deny();
  await readVerifiedJobLog(apiReadToken,fetchImpl);
  return Object.freeze({ok:true,originalFailedRun:TARGET.failedRunId,
