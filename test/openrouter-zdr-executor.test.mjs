@@ -1,14 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createHash} from 'node:crypto';
+import {createHash,generateKeyPairSync,sign} from 'node:crypto';
 import {inspect} from 'node:util';
 import {prepareBoundedSemanticReview} from '../candidate/semantic-review-request.mjs';
 import {OPENROUTER_MODEL_IDS,prepareOpenRouterBoundedRequest,
  assessOpenRouterMonthlyKey,assessOpenRouterModelZdr,
- preflightOpenRouterKey,executeOpenRouterShard}
+ preflightOpenRouterKey,executeOpenRouterShard as rawExecuteOpenRouterShard}
  from '../scripts/openrouter-zdr-executor.mjs';
-import {executeCompleteOpenRouterSemanticReview}
+import {executeCompleteOpenRouterSemanticReview as rawCompleteReview}
  from '../scripts/openrouter-semantic-full-review.mjs';
+import {reserveIndependentFinancialShard,makeFinancialReservationReceiptBytes}
+ from '../scripts/openrouter-independent-financial-reservation.mjs';
 const hash=b=>createHash('sha256').update(b).digest('hex');
 const URL='https://openrouter.ai/api/v1/chat/completions';
 const KEY='https://openrouter.ai/api/v1/key';
@@ -24,6 +26,58 @@ function makePlan(bytes=INPUT){
   diff_sha256:hash(bytes)},rawDiffBytes:bytes});
 }
 const K='sk-or-abc_123_456_789_abcdefghijklmno';
+const signer=generateKeyPairSync('ed25519');
+const publicPem=signer.publicKey.export({format:'pem',type:'spki'});
+const financialConfig={endpoint:'https://trusted-finance.example.org/v1/financial-reservations/openrouter-reviewer-b',
+ trustedSignerPublicKeyPem:publicPem,
+ trustedSignerFingerprintSha256:hash(signer.publicKey.export({format:'der',type:'spki'}))};
+function fakeFinancialAuthority({mutateReceipt=null,throwOnReserve=false,
+ corruptSignature=false}={}){
+ const requests=[];
+ const fetchImpl=async(url,options)=>{
+  requests.push({url,options});
+  assert.equal(url,financialConfig.endpoint);
+  assert.equal(options.method,'POST');
+  if(throwOnReserve)throw Error('DISCONNECTED');
+  const req=JSON.parse(options.body);
+  const receipt={...req,status:'RESERVED_POSSIBLY_BILLED_NO_AUTO_REFUND',
+   reservationId:'res-'+String(requests.length).padStart(32,'a'),
+   expiresAtMs:Date.now()+30_000};
+  if(mutateReceipt)mutateReceipt(receipt);
+  receipt.signature=sign(null,makeFinancialReservationReceiptBytes(receipt),signer.privateKey)
+   .toString('base64');
+  if(corruptSignature)receipt.upperMicroUsd+=1;
+  return reply(url,receipt);
+ };
+ return {fetchImpl,requests,config:financialConfig};
+}
+async function executeOpenRouterShard(args){
+ if(args.approvedThirdPartyPrivateEgress===true&&
+    args.authenticatedGlobalBudgetVerified===true&&
+    !Object.hasOwn(args,'financialReservation')){
+  const model=args.model??OPENROUTER_MODEL_IDS[0];
+  const envelope=prepareOpenRouterBoundedRequest({plan:args.plan,model,
+   maxOutputTokens:args.maxOutputTokens??1024,
+   trustedDeclarationIndex:args.trustedDeclarationIndex??null,
+   trustedOriginalDiffSha256:args.trustedOriginalDiffSha256??null});
+  const fixture=fakeFinancialAuthority();
+  const financialReservation=await reserveIndependentFinancialShard({
+   config:fixture.config,fetchImpl:fixture.fetchImpl,
+   context:{prNumber:args.plan.exactScope.prNumber,
+    headSha:args.plan.exactScope.headSha,runId:args.runId,
+    shardIndex:args.shardIndex??0,model,
+    requestSha256:hash(envelope.privateRequestJson),
+    upperMicroUsd:Math.ceil(envelope.estimateWorstShardUsd*1_000_000)}
+  });
+  return rawExecuteOpenRouterShard({...args,financialReservation});
+ }
+ return rawExecuteOpenRouterShard(args);
+}
+async function executeCompleteOpenRouterSemanticReview(args){
+ const fixture=fakeFinancialAuthority();
+ return rawCompleteReview({...args,
+  financialAuthority:fixture.config,financialFetchImpl:fixture.fetchImpl});
+}
 const keyInfo=(overrides={})=>({data:{
  limit:1,limit_reset:'monthly',limit_remaining:0.95,
  usage_monthly:0.05,include_byok_in_limit:false,...overrides}});
@@ -142,6 +196,126 @@ test('no global budget proof => zero paid POST',async()=>{
  }),/OR_GLOBAL_BUDGET_NOT_VERIFIED/);
  assert.equal(net.postCount(),0);
 });
+test('owner consent and key preflight alone cannot authorize a billable POST',async()=>{
+ const net=mockedNetwork();
+ const p=await preflightOpenRouterKey({apiKey:K,fetchImpl:net.fetchImpl});
+ await assert.rejects(()=>rawExecuteOpenRouterShard({
+  plan:makePlan(),trustedDiffBytes:INPUT,runId:RUN,apiKey:K,preflight:p,
+  approvedThirdPartyPrivateEgress:true,authenticatedGlobalBudgetVerified:true,
+  fetchImpl:net.fetchImpl
+ }),/OR_FINANCIAL_RESERVATION_REQUIRED/);
+ assert.equal(net.postCount(),0);
+});
+
+test('forged financial reservation object never authorizes a paid POST',async()=>{
+ const net=mockedNetwork();
+ const p=await preflightOpenRouterKey({apiKey:K,fetchImpl:net.fetchImpl});
+ await assert.rejects(()=>rawExecuteOpenRouterShard({
+  plan:makePlan(),trustedDiffBytes:INPUT,runId:RUN,apiKey:K,preflight:p,
+  approvedThirdPartyPrivateEgress:true,authenticatedGlobalBudgetVerified:true,
+  financialReservation:{ok:true,maySpend:true,status:'RESERVED'},
+  fetchImpl:net.fetchImpl
+ }),/OR_FINANCIAL_RESERVATION_REQUIRED/);
+ assert.equal(net.postCount(),0);
+});
+
+test('independent broker unavailable => zero provider POST',async()=>{
+ const net=mockedNetwork();
+ const fixture=fakeFinancialAuthority({throwOnReserve:true});
+ await assert.rejects(()=>rawCompleteReview({
+  plan:makePlan(),runId:RUN,apiKey:K,
+  approvedThirdPartyPrivateEgress:true,authenticatedGlobalBudgetVerified:true,
+  fetchImpl:net.fetchImpl,financialAuthority:fixture.config,
+  financialFetchImpl:fixture.fetchImpl
+ }),/OR_FINANCIAL_RESERVATION_UNCERTAIN_NO_RETRY/);
+ assert.equal(net.postCount(),0);
+ assert.equal(fixture.requests.length,1);
+});
+
+test('signed reservation cannot be transferred to a different run',async()=>{
+ const net=mockedNetwork();
+ const proofKey=await preflightOpenRouterKey({apiKey:K,fetchImpl:net.fetchImpl});
+ const plan=makePlan();
+ const envelope=prepareOpenRouterBoundedRequest({plan});
+ const fixture=fakeFinancialAuthority();
+ const financialReservation=await reserveIndependentFinancialShard({
+  config:fixture.config,fetchImpl:fixture.fetchImpl,
+  context:{prNumber:plan.exactScope.prNumber,headSha:plan.exactScope.headSha,
+   runId:RUN,shardIndex:0,model:OPENROUTER_MODEL_IDS[0],
+   requestSha256:hash(envelope.privateRequestJson),
+   upperMicroUsd:Math.ceil(envelope.estimateWorstShardUsd*1_000_000)}
+ });
+ await assert.rejects(()=>rawExecuteOpenRouterShard({
+  plan,trustedDiffBytes:INPUT,runId:'gh-38715430667-2',apiKey:K,
+  preflight:proofKey,financialReservation,
+  approvedThirdPartyPrivateEgress:true,
+  authenticatedGlobalBudgetVerified:true,fetchImpl:net.fetchImpl
+ }),/OR_FINANCIAL_RESERVATION_SCOPE_MISMATCH/);
+ assert.equal(net.postCount(),0);
+});
+
+test('signed reservation is burned before POST, including after a provider failure',async()=>{
+ const net=mockedNetwork({failAt:1});
+ const proofKey=await preflightOpenRouterKey({apiKey:K,fetchImpl:net.fetchImpl});
+ const plan=makePlan();
+ const envelope=prepareOpenRouterBoundedRequest({plan});
+ const fixture=fakeFinancialAuthority();
+ const financialReservation=await reserveIndependentFinancialShard({
+  config:fixture.config,fetchImpl:fixture.fetchImpl,
+  context:{prNumber:plan.exactScope.prNumber,headSha:plan.exactScope.headSha,
+   runId:RUN,shardIndex:0,model:OPENROUTER_MODEL_IDS[0],
+   requestSha256:hash(envelope.privateRequestJson),
+   upperMicroUsd:Math.ceil(envelope.estimateWorstShardUsd*1_000_000)}
+ });
+ const args={plan,trustedDiffBytes:INPUT,runId:RUN,apiKey:K,
+  preflight:proofKey,financialReservation,
+  approvedThirdPartyPrivateEgress:true,
+  authenticatedGlobalBudgetVerified:true,fetchImpl:net.fetchImpl};
+ await assert.rejects(()=>rawExecuteOpenRouterShard(args),/NO_AUTORETRY/);
+ await assert.rejects(()=>rawExecuteOpenRouterShard(args),/OR_FINANCIAL_RESERVATION_REQUIRED/);
+ assert.equal(net.postCount(),1);
+ assert.equal(fixture.requests.length,1);
+});
+
+test('wrong independent signer and mutated signed receipt fail before any paid POST',async()=>{
+ const plan=makePlan(),envelope=prepareOpenRouterBoundedRequest({plan});
+ const context={prNumber:plan.exactScope.prNumber,headSha:plan.exactScope.headSha,
+  runId:RUN,shardIndex:0,model:OPENROUTER_MODEL_IDS[0],
+  requestSha256:hash(envelope.privateRequestJson),
+  upperMicroUsd:Math.ceil(envelope.estimateWorstShardUsd*1_000_000)};
+ const fixture=fakeFinancialAuthority({corruptSignature:true});
+ await assert.rejects(()=>reserveIndependentFinancialShard({
+  config:fixture.config,context,fetchImpl:fixture.fetchImpl
+ }),/OR_FINANCIAL_RESERVATION_SCOPE_MISMATCH/);
+ const wrongConfig={...fixture.config,
+  trustedSignerFingerprintSha256:'0'.repeat(64)};
+ await assert.rejects(()=>reserveIndependentFinancialShard({
+  config:wrongConfig,context,fetchImpl:fixture.fetchImpl
+ }),/OR_FINANCIAL_AUTHORITY_NOT_CONFIGURED/);
+ assert.equal(fixture.requests.length,1);
+});
+
+test('expired or scope-violating broker receipts authorize no POST',async()=>{
+ const ctx=()=>{
+  const plan=makePlan(),envelope=prepareOpenRouterBoundedRequest({plan});
+  return {prNumber:plan.exactScope.prNumber,headSha:plan.exactScope.headSha,
+   runId:RUN,shardIndex:0,model:OPENROUTER_MODEL_IDS[0],
+   requestSha256:hash(envelope.privateRequestJson),
+   upperMicroUsd:Math.ceil(envelope.estimateWorstShardUsd*1_000_000)};
+ };
+ for(const mutateReceipt of [
+  row=>{row.expiresAtMs=Date.now()-1000},
+  row=>{row.upperMicroUsd+=1},
+  row=>{row.globalMonthCapMicroUsd+=1},
+  row=>{row.idempotencyKey='f'.repeat(64)}
+ ]){
+  const fixture=fakeFinancialAuthority({mutateReceipt});
+  await assert.rejects(()=>reserveIndependentFinancialShard({
+   config:fixture.config,context:ctx(),fetchImpl:fixture.fetchImpl
+  }),/OR_FINANCIAL_RESERVATION_(UNVERIFIED|SCOPE_MISMATCH)/);
+ }
+});
+
 test('correct public synthetic diff and ZDR POST retains true cloud provenance',async()=>{
  const net=mockedNetwork();
  const p=await preflightOpenRouterKey({apiKey:K,fetchImpl:net.fetchImpl});

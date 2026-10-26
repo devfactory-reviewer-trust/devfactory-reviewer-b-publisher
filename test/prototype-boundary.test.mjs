@@ -244,7 +244,10 @@ test('no workflow has access to private App secrets, write token or privileged t
       assert.ok(contents.indexOf('node source/scripts/protected-openrouter-review-request.mjs')<
         contents.indexOf('node scripts/protected-real-openrouter-review.mjs'));
       assert.match(contents,/^  group: reviewer-b-protected-real-semantic-manual$/m);
-      assert.equal((contents.match(/secrets\./g)||[]).length,3);
+      assert.equal((contents.match(/secrets\./g)||[]).length,6);
+      assert.match(contents,/secrets\.REVIEWER_B_FINANCIAL_AUTHORITY_URL/);
+      assert.match(contents,/secrets\.REVIEWER_B_FINANCIAL_SIGNER_PUBLIC_KEY_PEM/);
+      assert.match(contents,/secrets\.REVIEWER_B_FINANCIAL_SIGNER_FINGERPRINT_SHA256/);
       assert.match(contents,/secrets\.REVIEWER_B_OPENROUTER_API_KEY/);
       assert.match(contents,/secrets\.REVIEWER_B_CLOUD_POLICY_READY/);
       assert.match(contents,/secrets\.REVIEWER_B_GITHUB_APP_PRIVATE_KEY_PEM/);
