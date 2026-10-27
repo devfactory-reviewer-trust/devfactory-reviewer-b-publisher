@@ -281,9 +281,8 @@ test('no workflow has access to private App secrets, write token or privileged t
       continue;
     }
     if(filename==='reviewer-b-financial-auth-no-spend.yml'){
-      // Only this exact protected-main, manual, no-spend HTTP credential
-      // diagnostic is allowed to use the two financial environment secrets.
-      // The existing prototype boundary continues to apply to all others.
+      // Strict allowlist for the independently approved manual NO-SPEND
+      // financial authentication diagnostic on protected main.
       assert.match(contents,/^on:\n  workflow_dispatch:\n/m);
       assert.match(contents,/^permissions: \{\}\n/m);
       assert.match(contents,/^concurrency:\n  group: reviewer-b-financial-auth-nospend\n  cancel-in-progress: false\n/m);
