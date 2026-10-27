@@ -27,7 +27,7 @@ test('no workflow has access to private App secrets, write token or privileged t
   const files=readdirSync(workflows).filter(name=>/\.ya?ml$/.test(name));
   assert.ok(files.length>=2);
   for(const filename of files){
-    const contents=readFileSync(path.join(workflows,filename),'utf8');
+    const contents=readFileSync(path.join(workflows,filename),'utf8').replace(/\r\n/g,'\n');
     // GitHub job-level permissions can OVERRIDE a safe workflow-level block.
     // Permit exactly one root permissions mapping; reject ANY nested one.
     assert.equal((contents.match(/^permissions\s*:/gm)||[]).length,1);
@@ -274,6 +274,29 @@ test('no workflow has access to private App secrets, write token or privileged t
       assert.doesNotMatch(contents,/\b(?:actions\/checkout|GH_TOKEN|GITHUB_TOKEN|github\.token|id-token|attestations)\b/);
       assert.doesNotMatch(contents,/(?:\bmethod:|--request|-X)\s*(?:POST|PATCH|PUT|DELETE)\b/);
       assert.doesNotMatch(contents,/\b(?:contents|pull-requests|issues|actions|checks)\s*:\s*write\b/);
+      continue;
+    }
+    if(filename==='reviewer-b-financial-auth-no-spend.yml'){
+      // Strict allowlist for an isolated, human-approved no-spend
+      // GitHub-to-Cloudflare authentication diagnostic on protected main.
+      assert.match(contents,/^on:\n  workflow_dispatch:\n/m);
+      assert.match(contents,/^permissions: \{\}\n/m);
+      assert.match(contents,/^concurrency:\n  group: reviewer-b-financial-auth-nospend\n  cancel-in-progress: false\n/m);
+      assert.equal((contents.match(/^    if:/gm)||[]).length,1);
+      const guard=contents.match(/^    if: (.+)$/m)?.[1];
+      assert.equal(guard,"${{ github.repository == 'devfactory-reviewer-trust/devfactory-reviewer-b-publisher' && github.ref == 'refs/heads/main' && github.actor == 'devfactory-reviewer-service' && github.event_name == 'workflow_dispatch' && github.run_attempt == 1 }}");
+      assert.equal((contents.match(/environment:\s*reviewer-b-publish/g)||[]).length,1);
+      assert.equal((contents.match(/secrets\./g)||[]).length,2);
+      assert.match(contents,/secrets\.REVIEWER_B_FINANCIAL_BROKER_TOKEN/);
+      assert.match(contents,/secrets\.REVIEWER_B_FINANCIAL_AUTHORITY_URL/);
+      assert.equal((contents.match(/^      - name:/gm)||[]).length,1);
+      assert.match(contents,/https:\/\/devfactory-finance-broker\.deenkids7\.workers\.dev\/v1\/financial-reservations\/openrouter-reviewer-b/);
+      assert.match(contents,/body:'\{\}'/);
+      assert.match(contents,/result\.status!==503/);
+      assert.match(contents,/data\?\.error!=='ADMISSION_DISABLED'/);
+      assert.doesNotMatch(contents,/\b(?:pull_request|pull_request_target|workflow_run|workflow_call|issue_comment|push|schedule)\s*:/);
+      assert.doesNotMatch(contents,/\b(?:id-token|attestations|contents|pull-requests|issues|actions)\s*:\s*write\b/);
+      assert.doesNotMatch(contents,/(?:\bactions\/checkout|github\.token|GH_TOKEN|GITHUB_TOKEN|OPENROUTER_API_KEY|OPENROUTER_MANAGEMENT_KEY|openrouter\.ai|\bcurl\b|\bwget\b)/);
       continue;
     }
     assert.match(contents,/permissions:\s*\n\s*contents:\s*read\b/);
