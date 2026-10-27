@@ -9,7 +9,8 @@ import {OPENROUTER_MODEL_IDS,prepareOpenRouterBoundedRequest,
  from '../scripts/openrouter-zdr-executor.mjs';
 import {executeCompleteOpenRouterSemanticReview as rawCompleteReview}
  from '../scripts/openrouter-semantic-full-review.mjs';
-import {reserveIndependentFinancialShard,makeFinancialReservationReceiptBytes}
+import {reserveIndependentFinancialShard,consumeIndependentFinancialShard,
+ makeFinancialReservationReceiptBytes}
  from '../scripts/openrouter-independent-financial-reservation.mjs';
 const hash=b=>createHash('sha256').update(b).digest('hex');
 const URL='https://openrouter.ai/api/v1/chat/completions';
@@ -528,4 +529,75 @@ test('native key preflight refuses above 3 USD cap and never sends billable POST
  const net=mockedNetwork({keyOverrides:{limit:3.01,limit_remaining:3,usage_monthly:0.01}});
  await assert.rejects(()=>preflightOpenRouterKey({apiKey:K,fetchImpl:net.fetchImpl}),/OR_MONTHLY_KEY_BUDGET_NOT_PROVEN/);
  assert.equal(net.postCount(),0);
+});
+
+test('Gemini clock skew: signed 65-second receipt accepted but cannot replay',async()=>{
+ const at=Date.now();
+ const plan=makePlan(),envelope=prepareOpenRouterBoundedRequest({plan});
+ const context={prNumber:plan.exactScope.prNumber,
+  headSha:plan.exactScope.headSha,runId:RUN,shardIndex:0,
+  model:OPENROUTER_MODEL_IDS[0],
+  requestSha256:hash(envelope.privateRequestJson),
+  upperMicroUsd:Math.ceil(envelope.estimateWorstShardUsd*1_000_000)};
+ const fixture=fakeFinancialAuthority({
+  mutateReceipt:r=>{r.expiresAtMs=at+65_000;}
+ });
+ const proof=await reserveIndependentFinancialShard({
+  config:fixture.config,context,fetchImpl:fixture.fetchImpl,
+  now:()=>at
+ });
+ assert.equal(consumeIndependentFinancialShard({
+  proof,context,now:()=>at+2000
+ }).ok,true);
+ await assert.rejects(async()=>consumeIndependentFinancialShard({
+  proof,context,now:()=>at+2001
+ }),/OR_FINANCIAL_RESERVATION_REQUIRED/);
+});
+
+test('Gemini clock skew: expiry exceeding 75 seconds always denied',async()=>{
+ const at=Date.now();
+ const plan=makePlan(),envelope=prepareOpenRouterBoundedRequest({plan});
+ const context={prNumber:plan.exactScope.prNumber,
+  headSha:plan.exactScope.headSha,runId:RUN,shardIndex:0,
+  model:OPENROUTER_MODEL_IDS[0],
+  requestSha256:hash(envelope.privateRequestJson),
+  upperMicroUsd:Math.ceil(envelope.estimateWorstShardUsd*1_000_000)};
+ const fixture=fakeFinancialAuthority({
+  mutateReceipt:r=>{r.expiresAtMs=at+75_001;}
+ });
+ await assert.rejects(()=>reserveIndependentFinancialShard({
+  config:fixture.config,context,fetchImpl:fixture.fetchImpl,now:()=>at
+ }),/OR_FINANCIAL_RESERVATION_UNVERIFIED/);
+ assert.equal(fixture.requests.length,1);
+});
+
+test('Gemini mixed clock contract: function and numeric clocks enforce expiry',async()=>{
+ const at=Date.now();
+ const plan=makePlan(),envelope=prepareOpenRouterBoundedRequest({plan});
+ const context={prNumber:plan.exactScope.prNumber,
+  headSha:plan.exactScope.headSha,runId:RUN,shardIndex:0,
+  model:OPENROUTER_MODEL_IDS[0],
+  requestSha256:hash(envelope.privateRequestJson),
+  upperMicroUsd:Math.ceil(envelope.estimateWorstShardUsd*1_000_000)};
+ const fixture=fakeFinancialAuthority({
+  mutateReceipt:r=>{r.expiresAtMs=at+15_000;}
+ });
+ const first=await reserveIndependentFinancialShard({
+  config:fixture.config,context,fetchImpl:fixture.fetchImpl,now:()=>at
+ });
+ assert.throws(()=>consumeIndependentFinancialShard({
+  proof:first,context,now:()=>at+15_001
+ }),/OR_FINANCIAL_RESERVATION_EXPIRED/);
+ const second=await reserveIndependentFinancialShard({
+  config:fixture.config,context,fetchImpl:fixture.fetchImpl,now:()=>at
+ });
+ assert.equal(consumeIndependentFinancialShard({
+  proof:second,context,now:at+10
+ }).ok,true);
+ const third=await reserveIndependentFinancialShard({
+  config:fixture.config,context,fetchImpl:fixture.fetchImpl,now:()=>at
+ });
+ assert.throws(()=>consumeIndependentFinancialShard({
+  proof:third,context,now:()=>NaN
+ }),/OR_FINANCIAL_RESERVATION_EXPIRED/);
 });
