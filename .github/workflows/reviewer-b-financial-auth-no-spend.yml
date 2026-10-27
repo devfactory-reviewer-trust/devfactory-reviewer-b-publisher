@@ -1,0 +1,77 @@
+name: Reviewer B - financial broker authenticated NO-SPEND probe
+
+# Release-gated: this workflow must be reviewed, merged through protected
+# main and then explicitly dispatched by the service actor. It never reviews
+# a private PR, reserves money or contacts OpenRouter.
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: reviewer-b-financial-auth-nospend
+  cancel-in-progress: false
+
+jobs:
+  broker-auth-only:
+    name: Prove protected GitHub secret accepted by Cloudflare (NO SPEND)
+    if: ${{ github.repository == 'devfactory-reviewer-trust/devfactory-reviewer-b-publisher' && github.ref == 'refs/heads/main' && github.actor == 'devfactory-reviewer-service' && github.event_name == 'workflow_dispatch' && github.run_attempt == 1 }}
+    environment: reviewer-b-publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Authenticate against disabled broker without creating a reservation
+        shell: bash
+        env:
+          REVIEWER_B_FINANCIAL_BROKER_TOKEN: ${{ secrets.REVIEWER_B_FINANCIAL_BROKER_TOKEN }}
+          REVIEWER_B_FINANCIAL_AUTHORITY_URL: ${{ secrets.REVIEWER_B_FINANCIAL_AUTHORITY_URL }}
+        run: |
+          set -euo pipefail
+          # No Git checkout, third-party actions, payment API key or private diff.
+          # Never echo, hash, serialize or persist any secret.
+          node --input-type=module <<'NODE'
+          const endpoint = 'https://devfactory-finance-broker.deenkids7.workers.dev/v1/financial-reservations/openrouter-reviewer-b';
+          const suppliedEndpoint = process.env.REVIEWER_B_FINANCIAL_AUTHORITY_URL;
+          const token = process.env.REVIEWER_B_FINANCIAL_BROKER_TOKEN;
+          function fail(reason) {
+            console.error('BROKER_AUTH_NO_SPEND_DENIED_'+reason);
+            process.exitCode=1;
+          }
+          if(suppliedEndpoint!==endpoint ||
+             typeof token!=='string' ||
+             !/^[A-Za-z0-9_-]{40,256}$/.test(token)) {
+            fail('PROTECTED_ENVIRONMENT_MISSING_OR_UNTRUSTED');
+          } else {
+            try {
+              const result=await fetch(endpoint,{
+                method:'POST',redirect:'error',cache:'no-store',
+                headers:{Authorization:'Bearer '+token,
+                  Accept:'application/json','Content-Type':'application/json'},
+                // Deliberately invalid, no signed receipt can be minted,
+                // and admission must be disabled to count as success.
+                body:'{}',
+                signal:AbortSignal.timeout(12000)
+              });
+              if(result.url!==endpoint||result.redirected||
+                 result.status!==503||
+                 !/^application\/json(?:\s*;|$)/i.test(result.headers.get('content-type')||'')) {
+                fail('STATUS_'+result.status);
+              } else {
+                const raw=await result.text();
+                if(raw.length>512) {
+                  fail('RESPONSE_TOO_LARGE');
+                } else {
+                  let data=null;
+                  try { data=JSON.parse(raw); } catch {}
+                  if(data?.error!=='ADMISSION_DISABLED') {
+                    fail('ADMISSION_NOT_SAFELY_DISABLED');
+                  } else {
+                    console.log('BROKER_GITHUB_PROTECTED_TOKEN_VALID_AND_PAID_ADMISSION_DISABLED');
+                  }
+                }
+              }
+            } catch {
+              fail('NETWORK_OR_RESPONSE_FAILURE');
+            }
+          }
+          NODE
