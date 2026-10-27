@@ -244,7 +244,11 @@ test('no workflow has access to private App secrets, write token or privileged t
       assert.ok(contents.indexOf('node source/scripts/protected-openrouter-review-request.mjs')<
         contents.indexOf('node scripts/protected-real-openrouter-review.mjs'));
       assert.match(contents,/^  group: reviewer-b-protected-real-semantic-manual$/m);
-      assert.equal((contents.match(/secrets\./g)||[]).length,3);
+      assert.equal((contents.match(/secrets\./g)||[]).length,7);
+      assert.match(contents,/secrets\.REVIEWER_B_FINANCIAL_AUTHORITY_URL/);
+      assert.match(contents,/secrets\.REVIEWER_B_FINANCIAL_SIGNER_PUBLIC_KEY_PEM/);
+      assert.match(contents,/secrets\.REVIEWER_B_FINANCIAL_SIGNER_FINGERPRINT_SHA256/);
+      assert.match(contents,/secrets\.REVIEWER_B_FINANCIAL_BROKER_TOKEN/);
       assert.match(contents,/secrets\.REVIEWER_B_OPENROUTER_API_KEY/);
       assert.match(contents,/secrets\.REVIEWER_B_CLOUD_POLICY_READY/);
       assert.match(contents,/secrets\.REVIEWER_B_GITHUB_APP_PRIVATE_KEY_PEM/);
@@ -277,8 +281,8 @@ test('no workflow has access to private App secrets, write token or privileged t
       continue;
     }
     if(filename==='reviewer-b-financial-auth-no-spend.yml'){
-      // Strict allowlist for an isolated, human-approved no-spend
-      // GitHub-to-Cloudflare authentication diagnostic on protected main.
+      // Strict allowlist for the independently approved manual NO-SPEND
+      // financial authentication diagnostic on protected main.
       assert.match(contents,/^on:\n  workflow_dispatch:\n/m);
       assert.match(contents,/^permissions: \{\}\n/m);
       assert.match(contents,/^concurrency:\n  group: reviewer-b-financial-auth-nospend\n  cancel-in-progress: false\n/m);

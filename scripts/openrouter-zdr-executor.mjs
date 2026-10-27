@@ -7,6 +7,8 @@
  * plugins, tools, BYOK, external files, logs or explicit insecure endpoint.
  */
 import {createHash} from 'node:crypto';
+import {consumeIndependentFinancialShard}
+ from './openrouter-independent-financial-reservation.mjs';
 import {inspect} from 'node:util';
 import {prepareOfflineOllamaCandidate,validateOfflineOllamaCompletion}
  from '../candidate/ollama-offline-contract.mjs';
@@ -191,7 +193,7 @@ export async function executeOpenRouterShard({
  apiKey,preflight,approvedThirdPartyPrivateEgress=false,
  authenticatedGlobalBudgetVerified=false,fetchImpl=globalThis.fetch,
  maxOutputTokens=1024,trustedDeclarationIndex=null,
- trustedOriginalDiffSha256=null
+ trustedOriginalDiffSha256=null,financialReservation=null,shardIndex=0
 }={}){
  if(approvedThirdPartyPrivateEgress!==true)
     deny('OR_PRIVATE_EGRESS_NOT_AUTHORIZED');
@@ -213,6 +215,13 @@ export async function executeOpenRouterShard({
  if(DIGEST(trustedDiffBytes)!==req.diffSha256||
    trustedDiffBytes.toString('utf8')!==plan.privateDiffText)
     deny('OR_DIFF_SCOPE_MISMATCH');
+ // This is the ONLY paid OpenRouter egress point: a pinned, independent,
+ // one-use signed financial reservation is mandatory for every shard.
+ consumeIndependentFinancialShard({proof:financialReservation,context:{
+   prNumber:plan.exactScope.prNumber,headSha:plan.exactScope.headSha,
+   runId,shardIndex,model,requestSha256:DIGEST(req.privateRequestJson),
+   upperMicroUsd:Math.ceil(req.estimateWorstShardUsd*1_000_000)
+ }});
  // No automatic retry: a transport loss can have incurred a provider bill.
  let r;
  try{

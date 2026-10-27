@@ -130,6 +130,32 @@ test('protected cloud run never active from draft, PR event or missing policy',(
   {REVIEWER_B_TARGET_PR:'932x'}
  ])assert.equal(canRunProtectedOpenRouterReview({...base,...changes}),false);
 });
+test('protected Publisher with no independent financial signer denies before any network',async()=>{
+ const {executeProtectedOpenRouterReview}=await import('../scripts/protected-real-openrouter-review.mjs');
+ const env={
+  GITHUB_REPOSITORY:'devfactory-reviewer-trust/devfactory-reviewer-b-publisher',
+  GITHUB_REF:'refs/heads/main',GITHUB_EVENT_NAME:'workflow_dispatch',
+  GITHUB_ACTOR:'devfactory-reviewer-service',
+  GITHUB_SHA:'c'.repeat(40),GITHUB_RUN_ID:'4000',GITHUB_RUN_ATTEMPT:'1',
+  GITHUB_WORKFLOW_REF:'devfactory-reviewer-trust/devfactory-reviewer-b-publisher/.github/workflows/reviewer-b-private-openrouter.yml@refs/heads/main',
+  REVIEWER_B_TARGET_PR:String(PR),REVIEWER_B_EXPECTED_HEAD:HEAD,
+  REVIEWER_B_OPENROUTER_MODEL:MODEL,
+  REVIEWER_B_CLOUD_POLICY_READY:'approved-protected-v1',
+  REVIEWER_B_CLOUD_REQUEST_VERIFIED:'true',
+  REVIEWER_B_CLOUD_TARGET_REPOSITORY:'deenkids7-dev/deenkids',
+  REVIEWER_B_GITHUB_APP_PRIVATE_KEY_PEM:'x'.repeat(150),
+  REVIEWER_B_OPENROUTER_API_KEY:'sk-or-'+'a'.repeat(30)
+ };
+ let calls=0;
+ const result=await executeProtectedOpenRouterReview({env,
+  fetchImpl:async()=>{calls++;throw Error('unexpected')},
+  cloudFetchImpl:async()=>{calls++;throw Error('unexpected')}
+ });
+ assert.equal(result.ok,false);
+ assert.equal(result.code,'CLOUD_FINANCIAL_AUTHORITY_NOT_CONFIGURED');
+ assert.equal(calls,0);
+});
+
 test('cloud code path includes mandatory native uniqueness and owner consent',async()=>{
  const {readFileSync}=await import('node:fs');
  const {fileURLToPath}=await import('node:url');

@@ -10,8 +10,11 @@ import {canonicalJson} from '../src/canonical.mjs';
 import {prepareBoundedSemanticReview} from '../candidate/semantic-review-request.mjs';
 import {planAdaptiveSemanticShards} from '../candidate/semantic-bounded-shards.mjs';
 import {makeBoundedDiffDeclarationIndex} from '../candidate/semantic-diff-declarations.mjs';
-import {OPENROUTER_MODEL_IDS,preflightOpenRouterKey,executeOpenRouterShard}
+import {OPENROUTER_MODEL_IDS,preflightOpenRouterKey,executeOpenRouterShard,
+ prepareOpenRouterBoundedRequest}
  from './openrouter-zdr-executor.mjs';
+import {reserveIndependentFinancialShard,validateIndependentFinancialConfig}
+ from './openrouter-independent-financial-reservation.mjs';
 
 const sha=b=>createHash('sha256').update(b).digest('hex');
 const deny=c=>{throw Error(c)};
@@ -21,7 +24,8 @@ export async function executeCompleteOpenRouterSemanticReview({
  approvedThirdPartyPrivateEgress=false,
  authenticatedGlobalBudgetVerified=false,
  fetchImpl=globalThis.fetch,maxOutputTokens=1024,
- concurrency=3,clockMs=()=>performance.now()
+ concurrency=3,clockMs=()=>performance.now(),
+ financialAuthority=null,financialFetchImpl=globalThis.fetch
 }={}){
  if(typeof clockMs!=='function')deny('OR_CLOCK_INVALID');
  if(!plan||typeof plan.privateDiffText!=='string'||
@@ -33,6 +37,8 @@ export async function executeCompleteOpenRouterSemanticReview({
     deny('OR_PRIVATE_EGRESS_NOT_AUTHORIZED');
  if(authenticatedGlobalBudgetVerified!==true)
     deny('OR_GLOBAL_BUDGET_NOT_VERIFIED');
+ if(!validateIndependentFinancialConfig(financialAuthority).ok)
+    deny('OR_FINANCIAL_AUTHORITY_NOT_CONFIGURED');
  const original=Buffer.from(plan.privateDiffText,'utf8');
  if(sha(original)!==plan.exactScope?.diffSha256)
     deny('OR_FULL_DIFF_MISMATCH');
@@ -106,10 +112,25 @@ export async function executeCompleteOpenRouterSemanticReview({
    const job=jobs[index];
    try{
     const freshPreflight=await currentKeyProof();
+    const envelope=prepareOpenRouterBoundedRequest({
+      plan:job.chunkPlan,model,maxOutputTokens,
+      trustedDeclarationIndex:declarations,
+      trustedOriginalDiffSha256:parts.originalDiffSha256
+    });
+    // The independent broker must DURABLY reserve the conservative bound
+    // before this exact shard can reach the provider. No retry on ambiguity.
+    const financialReservation=await reserveIndependentFinancialShard({
+      config:financialAuthority,fetchImpl:financialFetchImpl,
+      context:{prNumber:plan.exactScope.prNumber,
+       headSha:plan.exactScope.headSha,runId,shardIndex:index,model,
+       requestSha256:sha(envelope.privateRequestJson),
+       upperMicroUsd:Math.ceil(envelope.estimateWorstShardUsd*1_000_000)}
+    });
     const result=await executeOpenRouterShard({
       plan:job.chunkPlan,trustedDiffBytes:job.bytes,runId,
       model,apiKey,preflight:freshPreflight,approvedThirdPartyPrivateEgress,
       authenticatedGlobalBudgetVerified,fetchImpl,maxOutputTokens,
+      financialReservation,shardIndex:index,
       trustedDeclarationIndex:declarations,
       trustedOriginalDiffSha256:parts.originalDiffSha256
     });

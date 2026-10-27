@@ -17,6 +17,8 @@ import {OPENROUTER_MODEL_IDS,preflightOpenRouterKey}
  from './openrouter-zdr-executor.mjs';
 import {executeCompleteOpenRouterSemanticReview}
  from './openrouter-semantic-full-review.mjs';
+import {validateIndependentFinancialConfig}
+ from './openrouter-independent-financial-reservation.mjs';
 import {assessAuthenticatedOpenRouterSpendAuthorization}
  from './openrouter-only-spend-gate.mjs';
 import {fetchAndVerifyUniqueOpenRouterServiceRequest}
@@ -56,6 +58,16 @@ export async function executeProtectedOpenRouterReview({
     typeof env.REVIEWER_B_OPENROUTER_API_KEY!=='string'||
     !/^sk-or-[A-Za-z0-9_-]{20,200}$/.test(env.REVIEWER_B_OPENROUTER_API_KEY))
     return Object.freeze({ok:false,code:'CLOUD_CREDENTIALS_NOT_PROVISIONED'});
+ // Configuration is signer-pinned and independent of Publisher/App secrets.
+ // A missing broker guarantees zero private paid OpenRouter POSTs.
+ const financialAuthority={
+  endpoint:env.REVIEWER_B_FINANCIAL_AUTHORITY_URL,
+  trustedSignerPublicKeyPem:env.REVIEWER_B_FINANCIAL_SIGNER_PUBLIC_KEY_PEM,
+  trustedSignerFingerprintSha256:env.REVIEWER_B_FINANCIAL_SIGNER_FINGERPRINT_SHA256,
+  authorizationToken:env.REVIEWER_B_FINANCIAL_BROKER_TOKEN
+ };
+ if(!validateIndependentFinancialConfig(financialAuthority).ok)
+   return Object.freeze({ok:false,code:'CLOUD_FINANCIAL_AUTHORITY_NOT_CONFIGURED'});
  let stage='READ';
  try {
   const runId='gh-'+env.GITHUB_RUN_ID+'-'+env.GITHUB_RUN_ATTEMPT;
@@ -137,7 +149,8 @@ export async function executeProtectedOpenRouterReview({
    apiKey:env.REVIEWER_B_OPENROUTER_API_KEY,
    approvedThirdPartyPrivateEgress:true,
    authenticatedGlobalBudgetVerified:budget.verified&&budget.maySpend,
-   fetchImpl:cloudFetchImpl,maxOutputTokens:1024,concurrency:3
+   fetchImpl:cloudFetchImpl,maxOutputTokens:1024,concurrency:3,
+   financialAuthority,financialFetchImpl:cloudFetchImpl
   });
   stage='REPORT';
   const comment=prepareOpenRouterNativeComment({preflight,cloud,runId});
