@@ -6,7 +6,7 @@ import {canRunProtectedNativeComment,executeNativeCommentOnlyCanary}
   from '../scripts/protected-native-comment-entrypoint.mjs';
 
 const wf=readFileSync(resolve(import.meta.dirname,
-  '../.github/workflows/reviewer-b-native-comment-once.yml'),'utf8');
+  '../.github/workflows/reviewer-b-native-comment-once.yml'),'utf8').replace(/\r\n/g,'\n');
 const context=()=>({
  GITHUB_REPOSITORY:'devfactory-reviewer-trust/devfactory-reviewer-b-publisher',
  GITHUB_REF:'refs/heads/main',
