@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { runSyntheticLocalOllamaBenchmark,safeBenchmarkErrorCode,evaluateSyntheticReviewQuality }
+import { runSyntheticLocalOllamaBenchmark,safeBenchmarkErrorCode,evaluateSyntheticReviewQuality,scoreFixedSyntheticOracle }
   from '../bench/ollama-synthetic-benchmark.mjs';
 
 const ENDPOINT='http://127.0.0.1:11434/api/chat';
@@ -213,6 +213,26 @@ test('third free Qwen3 8B candidate is strictly local and cannot bypass review q
   assert.equal(c.url,ENDPOINT);
  }
 });
+test('experimental Qwen 3.5 4B runs the same 12 synthetic fixtures, never private source',async()=>{
+ const f=mock({model:'qwen3.5:4b'});
+ const result=await runSyntheticLocalOllamaBenchmark({fetchImpl:f.fetchImpl,model:'qwen3.5:4b'});
+ assert.equal(result.model,'qwen3.5:4b');
+ assert.equal(result.testsCompleted,12);
+ assert.equal(result.modelQualityCertified,false);
+ assert.equal(result.approvalAuthorized,false);
+ assert.equal(result.independentReviewerProvenanceVerified,false);
+ assert.equal(result.privateSourceReviewed,false);
+ assert.equal(f.calls.length,12);
+ for(const c of f.calls){
+  const req=JSON.parse(c.config.body);
+  assert.equal(req.model,'qwen3.5:4b');
+  assert.equal(req.think,false);
+  assert.equal(req.keep_alive,'5m');
+  assert.equal(req.options.num_ctx,8192);
+  assert.equal(c.url,ENDPOINT);
+ }
+});
+
 test('opt-in Qwen3 CI must run only synthetic cases with no privileged permissions',()=>{
  const y=readFileSync(new URL('../.github/workflows/reviewer-b-ollama-synthetic-canary.yml',
   import.meta.url),'utf8');
@@ -225,14 +245,19 @@ test('opt-in Qwen3 CI must run only synthetic cases with no privileged permissio
  assert.doesNotMatch(y,/security-events:\s*write|secrets\./);
 });
 
-test('opt-in Qwen3-only benchmark selects only 8B model while preserving full comparison label',()=>{
+test('opt-in Qwen3 and Qwen3.5 benchmarks select their respective models while preserving full comparison label',()=>{
  const y=readFileSync(new URL('../.github/workflows/reviewer-b-ollama-synthetic-canary.yml',import.meta.url),'utf8');
  const options=[...y.matchAll(/'(\[\{"model":.*?\}\])'/g)].map(x=>JSON.parse(x[1]));
- assert.equal(options.length,3);
+ assert.equal(options.length,6);
  assert.deepEqual(options[0],[{model:'qwen2.5-coder:7b',cli_arg:''}]);
  assert.deepEqual(options[1],[{model:'qwen3:8b',cli_arg:'--qwen3-synthetic'}]);
- assert.deepEqual(options[2].map(x=>x.model),
+ assert.deepEqual(options[2],[{model:'qwen3.5:4b',cli_arg:'--qwen35-synthetic'}]);
+ assert.deepEqual(options[3],[{model:'qwen3.5:9b',cli_arg:'--qwen35-9b-synthetic'}]);
+ assert.deepEqual(options[4],[{model:'qwen3.5:9b',cli_arg:'--qwen35-9b-holdout'}]);
+ assert.deepEqual(options[5].map(x=>x.model),
   ['qwen2.5-coder:7b','qwen2.5-coder:14b','qwen3:8b']);
+ assert.match(y,/reviewer-b-benchmark-qwen35/);
+ assert.match(y,/--qwen35-synthetic/);
  assert.match(y,/contains\(github\.event\.pull_request\.labels\.\*\.name, 'reviewer-b-benchmark-qwen3'\)/);
  assert.match(y,/github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
  assert.match(y,/^\s*contents:\s*read\s*$/m);
@@ -299,4 +324,115 @@ test('R76 benchmark exercises OLD-side deletion grammar on both benign and unsaf
  assert.equal(harmless.semanticFindingDetected,false);
  assert.equal(result.syntheticQualityGatePassed,false);
  assert.equal(result.approvalAuthorized,false);
+});
+
+test('historical public 4B descriptions are directionally valid, reverse claims stay rejected',()=>{
+  const realCorrect=[
+    ['removed authorization check',"The function now returns true for all inputs, bypassing the original requirement that only users with role 'admin' are authorized."],
+    ['removed authorization check','The isAuthorized function now always returns `true`, bypassing any authorization checks.'],
+    ['removed HTML escaping','User input is no longer escaped before rendering, allowing arbitrary HTML/JavaScript execution.'],
+    ['negative amount validation weakened','The condition amount < -100 is less restrictive than before, allowing values between -100 and 0 to bypass validation.'],
+    ['negative amount validation weakened','Lowering the threshold to -100 may allow previously rejected negative amounts.'],
+    ['session token check inverted','Logic inversion causes valid tokens to be rejected and invalid tokens to be accepted.'],
+    ['deleted authorization guard without replacement','Removal of isAdmin check allows non-admin users to delete resources.']
+  ];
+  for(const [label,explanation] of realCorrect)
+    assert.equal(scoreFixedSyntheticOracle(label,explanation),true,label);
+  const incorrect=[
+    ['negative amount validation weakened','Increasing the threshold to -100 may allow valid payments to be incorrectly rejected.'],
+    ['session token check inverted','The condition incorrectly accepts a matching token, allowing unauthorized access.'],
+    ['removed authorization check','This change now enforces role-based authorization.'],
+    ['removed HTML escaping','The change escapes more HTML and is safer.'],
+    ['deleted authorization guard without replacement','No authorization check was removed or bypassed.']
+  ];
+  for(const [label,explanation] of incorrect)
+    assert.equal(scoreFixedSyntheticOracle(label,explanation),false,label);
+  assert.equal(scoreFixedSyntheticOracle('safe null-checked authorization',
+    'Optional chaining may allow unauthorized access.'),false);
+  const gate=evaluateSyntheticReviewQuality({
+    seededSemanticBugs:5,seededSemanticBugsDetected:5,
+    cleanFixtures:5,cleanFixtureFalseAlerts:2,cleanFixtureBlockingFalseAlerts:1
+  });
+  assert.equal(gate.syntheticQualityGatePassed,false);
+  assert.equal(gate.approvalAuthorized,false);
+});
+
+test('experimental Qwen 3.5 9B stays PUBLIC synthetic-only and strict fail-closed',async()=>{
+ const f=mock({model:'qwen3.5:9b'});
+ const result=await runSyntheticLocalOllamaBenchmark({fetchImpl:f.fetchImpl,model:'qwen3.5:9b'});
+ assert.equal(result.model,'qwen3.5:9b');
+ assert.equal(result.testsCompleted,12);
+ assert.equal(result.modelQualityCertified,false);
+ assert.equal(result.approvalAuthorized,false);
+ assert.equal(result.privateSourceReviewed,false);
+ assert.equal(result.independentReviewerProvenanceVerified,false);
+ assert.equal(f.calls.length,12);
+ for(const call of f.calls){
+   const request=JSON.parse(call.config.body);
+   assert.equal(request.model,'qwen3.5:9b');
+   assert.equal(request.think,false);
+   assert.equal(request.options.num_ctx,8192);
+   assert.equal(request.keep_alive,'5m');
+   assert.equal(call.url,ENDPOINT);
+ }
+ const yaml=readFileSync(new URL('../.github/workflows/reviewer-b-ollama-synthetic-canary.yml',import.meta.url),'utf8');
+ assert.match(yaml,/reviewer-b-benchmark-qwen35-9b/);
+ assert.match(yaml,/--qwen35-9b-synthetic/);
+ assert.match(yaml,/^\s*contents:\s*read\s*$/m);
+ assert.doesNotMatch(yaml,/secrets\.|pull_request_target|contents:\s*write/);
+});
+
+test('RunPod 35B is benchmark-only, uses fixed synthetic diffs and preserves native-release denial',async()=>{
+ const model='qwen3.6:35b-a3b-coding';
+ const f=mock({model});
+ const result=await runSyntheticLocalOllamaBenchmark({
+   fetchImpl:f.fetchImpl,model
+ });
+ assert.equal(f.calls.length,12);
+ assert.equal(result.model,model);
+ assert.equal(result.testsCompleted,12);
+ assert.equal(result.modelQualityCertified,false);
+ assert.equal(result.approvalAuthorized,false);
+ assert.equal(result.privateSourceReviewed,false);
+ assert.equal(result.independentReviewerProvenanceVerified,false);
+ assert.equal(result.publishEvent,null);
+ assert.ok(result.performanceMetrics.wall_seconds>=0);
+ assert.ok(result.performanceMetrics.request_p95_seconds>=0);
+ assert.equal(result.performanceMetrics.requests,12);
+ assert.equal(result.performanceMetrics.gpu_residency_verified,false);
+ assert.equal(result.performanceMetrics.ollama_reported_tokens_per_second,null);
+ for(const call of f.calls){
+   assert.equal(call.url,'http://127.0.0.1:11434/api/chat');
+   assert.equal(JSON.parse(call.config.body).model,model);
+   assert.equal(JSON.parse(call.config.body).keep_alive,'5m');
+   assert.doesNotMatch(call.config.body,/GITHUB_TOKEN|PRIVATE KEY|ghp_/);
+ }
+ const production=requireProductionWorkflow();
+ assert.match(production,/REVIEWER_B_EXPECTED_MODEL: 'qwen2\.5-coder:7b'/);
+ assert.doesNotMatch(production,/qwen3\.6:35b-a3b-coding/);
+});
+function requireProductionWorkflow(){
+ return readFileSync(new URL('../.github/workflows/reviewer-b-private-semantic.yml',import.meta.url),'utf8');
+}
+
+test('RunPod 35B holdout uses unseen synthetic cases and never promotes a clean model to PASS',async()=>{
+ const model='qwen3.6:35b-a3b-coding';
+ const f=mock({model});
+ const result=await runSyntheticLocalOllamaBenchmark({
+   fetchImpl:f.fetchImpl,model,fixtureSet:'holdout'
+ });
+ assert.equal(result.model,model);
+ assert.equal(result.fixtureSet,'holdout');
+ assert.equal(result.testsCompleted,12);
+ assert.equal(f.calls.length,12);
+ assert.equal(result.modelQualityCertified,false);
+ assert.equal(result.approvalAuthorized,false);
+ assert.equal(result.privateSourceReviewed,false);
+ assert.equal(result.independentReviewerProvenanceVerified,false);
+ assert.equal(result.publishEvent,null);
+ assert.equal(result.performanceMetrics.requests,12);
+ for(const call of f.calls){
+   assert.equal(call.url,ENDPOINT);
+   assert.equal(JSON.parse(call.config.body).model,model);
+ }
 });

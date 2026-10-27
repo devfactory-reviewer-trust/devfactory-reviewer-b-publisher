@@ -9,13 +9,14 @@ on:
       - 'bench/**'
       - 'candidate/ollama-offline-contract.mjs'
       - 'test/ollama-synthetic-benchmark.test.mjs'
+      - 'test/ollama-offline-contract.test.mjs'
 
 permissions:
   contents: read
 
 jobs:
   synthetic-local-ollama:
-    if: github.repository == 'devfactory-reviewer-trust/devfactory-reviewer-b-publisher' && github.event.pull_request.head.repo.full_name == github.repository && (contains(github.event.pull_request.labels.*.name, 'reviewer-b-benchmark') || contains(github.event.pull_request.labels.*.name, 'reviewer-b-benchmark-qwen3') || contains(github.event.pull_request.labels.*.name, 'reviewer-b-benchmark-7b'))
+    if: github.repository == 'devfactory-reviewer-trust/devfactory-reviewer-b-publisher' && github.event.pull_request.head.repo.full_name == github.repository && (contains(github.event.pull_request.labels.*.name, 'reviewer-b-benchmark') || contains(github.event.pull_request.labels.*.name, 'reviewer-b-benchmark-qwen3') || contains(github.event.pull_request.labels.*.name, 'reviewer-b-benchmark-7b') || contains(github.event.pull_request.labels.*.name, 'reviewer-b-benchmark-qwen35') || contains(github.event.pull_request.labels.*.name, 'reviewer-b-benchmark-qwen35-9b') || contains(github.event.pull_request.labels.*.name, 'reviewer-b-benchmark-qwen35-9b-holdout'))
     name: Synthetic Ollama ${{ matrix.model }} - NO secrets or private code
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -23,7 +24,7 @@ jobs:
       fail-fast: false
       matrix:
         # Third-model-only opt-in avoids rerunning already-failed 7B/14B.
-        include: ${{ fromJSON(contains(github.event.pull_request.labels.*.name, 'reviewer-b-benchmark-7b') && '[{"model":"qwen2.5-coder:7b","cli_arg":""}]' || contains(github.event.pull_request.labels.*.name, 'reviewer-b-benchmark-qwen3') && '[{"model":"qwen3:8b","cli_arg":"--qwen3-synthetic"}]' || '[{"model":"qwen2.5-coder:7b","cli_arg":""},{"model":"qwen2.5-coder:14b","cli_arg":"--large-synthetic"},{"model":"qwen3:8b","cli_arg":"--qwen3-synthetic"}]') }}
+        include: ${{ fromJSON(contains(github.event.pull_request.labels.*.name, 'reviewer-b-benchmark-7b') && '[{"model":"qwen2.5-coder:7b","cli_arg":""}]' || contains(github.event.pull_request.labels.*.name, 'reviewer-b-benchmark-qwen3') && '[{"model":"qwen3:8b","cli_arg":"--qwen3-synthetic"}]' || contains(github.event.pull_request.labels.*.name, 'reviewer-b-benchmark-qwen35') && '[{"model":"qwen3.5:4b","cli_arg":"--qwen35-synthetic"}]' || contains(github.event.pull_request.labels.*.name, 'reviewer-b-benchmark-qwen35-9b') && '[{"model":"qwen3.5:9b","cli_arg":"--qwen35-9b-synthetic"}]' || contains(github.event.pull_request.labels.*.name, 'reviewer-b-benchmark-qwen35-9b-holdout') && '[{"model":"qwen3.5:9b","cli_arg":"--qwen35-9b-holdout"}]' || '[{"model":"qwen2.5-coder:7b","cli_arg":""},{"model":"qwen2.5-coder:14b","cli_arg":"--large-synthetic"},{"model":"qwen3:8b","cli_arg":"--qwen3-synthetic"}]') }}
     steps:
       - name: Checkout exact PUBLIC PR HEAD without third-party actions
         shell: bash
@@ -78,7 +79,7 @@ jobs:
           curl --fail --silent --noproxy '*' \
             "http://127.0.0.1:11434/api/tags" > /dev/null
           case "$BENCHMARK_MODEL" in
-            'qwen2.5-coder:7b'|'qwen2.5-coder:14b'|'qwen3:8b') ;;
+            'qwen2.5-coder:7b'|'qwen2.5-coder:14b'|'qwen3:8b'|'qwen3.5:4b'|'qwen3.5:9b') ;;
             *) exit 1 ;;
           esac
           ollama pull "$BENCHMARK_MODEL" > /dev/null
@@ -87,6 +88,12 @@ jobs:
             node bench/ollama-synthetic-benchmark.mjs --large-synthetic | tee "$RUNNER_TEMP/synthetic-report.json"
           elif [[ "$BENCHMARK_ARG" == '--qwen3-synthetic' ]]; then
             node bench/ollama-synthetic-benchmark.mjs --qwen3-synthetic | tee "$RUNNER_TEMP/synthetic-report.json"
+          elif [[ "$BENCHMARK_ARG" == '--qwen35-synthetic' ]]; then
+            node bench/ollama-synthetic-benchmark.mjs --qwen35-synthetic | tee "$RUNNER_TEMP/synthetic-report.json"
+          elif [[ "$BENCHMARK_ARG" == '--qwen35-9b-synthetic' ]]; then
+            node bench/ollama-synthetic-benchmark.mjs --qwen35-9b-synthetic | tee "$RUNNER_TEMP/synthetic-report.json"
+          elif [[ "$BENCHMARK_ARG" == '--qwen35-9b-holdout' ]]; then
+            node bench/ollama-synthetic-benchmark.mjs --qwen35-9b-holdout | tee "$RUNNER_TEMP/synthetic-report.json"
           else
             test -z "$BENCHMARK_ARG"
             node bench/ollama-synthetic-benchmark.mjs | tee "$RUNNER_TEMP/synthetic-report.json"
@@ -94,6 +101,10 @@ jobs:
           node --input-type=module -e '
             import { readFileSync } from "node:fs";
             const r=JSON.parse(readFileSync(process.argv[1],"utf8"));
+            const holdout=process.argv[3]==="--qwen35-9b-holdout";
+            if((holdout && r.fixtureSet!=="holdout") ||
+               (!holdout && r.fixtureSet!==undefined))
+              throw Error("SYNTHETIC_FIXTURE_SET_MISMATCH");
             if(r.syntheticQualityGatePassed===false)
               throw Error("MODEL_QUALITY_GATE_FAILED_NOT_PRODUCTION_READY");
             if(r.benchmark!=="synthetic-local-ollama-v2" ||
@@ -109,4 +120,4 @@ jobs:
             process.stdout.write("SYNTHETIC_MODEL_EXECUTION_VERIFIED_NOT_INDEPENDENT_REVIEW\n");
             if(!r.syntheticQualityGatePassed)
               throw Error("MODEL_QUALITY_GATE_FAILED_NOT_PRODUCTION_READY");
-          ' "$RUNNER_TEMP/synthetic-report.json" "$BENCHMARK_MODEL"
+          ' "$RUNNER_TEMP/synthetic-report.json" "$BENCHMARK_MODEL" "$BENCHMARK_ARG"

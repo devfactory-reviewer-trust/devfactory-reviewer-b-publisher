@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
+import { HOLDOUT_SEMANTIC_FIXTURES } from './ollama-holdout-fixtures.mjs';
+import { performance } from 'node:perf_hooks';
 import { runFailOnlyStaticDiffAudit } from '../candidate/fail-only-static-audit.mjs';
 import { prepareBoundedSemanticReview } from '../candidate/semantic-review-request.mjs';
 import {
@@ -25,7 +27,7 @@ const FIXTURES=Object.freeze([
     before:"function isAuthorized(user) { return user?.role === 'admin'; }",
     source:'function isAuthorized(user) { return true; }',
     knownStaticBlocker:false,knownSemanticBug:true,
-    oraclePattern:/(?:always returns? true|bypass(?:es|ing)? authorization|authorization (?:check )?bypass(?:ed|es|ing)?|unauthorized access)/i}),
+    oraclePattern:/(?:always returns? [`]?true[`]?|returns? true for all (?:inputs|users)|bypass(?:es|ed|ing)? (?:the )?(?:original )?(?:authorization|admin|role|requirement)|authorization (?:check )?bypass(?:ed|es|ing)?|unauthorized access)/i}),
   Object.freeze({label:'safe null-checked authorization',path:AUTH_PATH,
     before:"function isAuthorized(user) { return user.role === 'admin'; }",
     source:"function isAuthorized(user) { return user?.role === 'admin'; }",
@@ -37,17 +39,17 @@ const FIXTURES=Object.freeze([
     before:'const rendered = escapeHtml(userInput);',
     source:'const rendered = userInput;',
     knownStaticBlocker:false,knownSemanticBug:true,
-    oraclePattern:/(?:xss|cross.site scripting|unescaped html|html escaping|html escape|injection)/i}),
+    oraclePattern:/(?:xss|cross.site scripting|unescaped html|html escaping|html escape|injection|no longer escap(?:ed|ing).{0,80}(?:render|html|javascript)|arbitrary html(?:\/javascript)? execution)/i}),
   Object.freeze({label:'negative amount validation weakened',path:'src/payment-synthetic.mjs',
     before:"if (amount < 0) throw new Error('invalid');",
     source:"if (amount < -100) throw new Error('invalid');",
     knownStaticBlocker:false,knownSemanticBug:true,
-    oraclePattern:/(?:allow(?:s|ed|ing)? negative|accept(?:s|ed|ing)? negative|negative (?:amounts?|values?) (?:can|are) (?:now )?(?:accepted|allowed)|negative.{0,35}not rejected)/i}),
+    oraclePattern:/(?:allow(?:s|ed|ing)? (?:previously (?:rejected|invalid) )?negative|accept(?:s|ed|ing)? negative|negative (?:amounts?|values?) (?:are |were |can be |now )?(?:now )?(?:accepted|allowed)|negative.{0,35}not rejected|allow(?:s|ed|ing)?.{0,60}(?:negative values?|values between -100 and 0).{0,45}bypass validation)/i}),
   Object.freeze({label:'session token check inverted',path:'src/session-synthetic.mjs',
     before:'if (token !== session.token) return false;',
     source:'if (token === session.token) return false;',
     knownStaticBlocker:false,knownSemanticBug:true,
-    oraclePattern:/(?:valid (?:session )?tokens? (?:are |is )?(?:rejected|denied)|(?:reject|deny)(?:s|ing)? (?:the )?valid (?:session )?token|invalid (?:session )?tokens? (?:are |is )?(?:accepted|allowed)|(?:accept|allow)(?:s|ing)? invalid (?:session )?token)/i}),
+    oraclePattern:/(?:valid (?:session )?tokens? (?:are |is |to be )?(?:rejected|denied)|(?:reject|deny)(?:s|ing)? (?:the )?valid (?:session )?token|invalid (?:session )?tokens? (?:are |is |to be )?(?:accepted|allowed)|(?:accept|allow)(?:s|ing)? invalid (?:session )?token)/i}),
   Object.freeze({label:'safe nonnegative clamp',path:'src/bounds-synthetic.mjs',
     before:'const limit = Math.min(amount, max);',
     source:'const limit = Math.max(0, Math.min(amount, max));',
@@ -60,13 +62,26 @@ const FIXTURES=Object.freeze([
     path:'src/auth-deletion-synthetic.mjs',
     before:'if (!user.isAdmin) return false;',source:null,deletionOnly:true,
     knownStaticBlocker:false,knownSemanticBug:true,
-    oraclePattern:/(?:removed|deleted|missing|absent|bypass(?:ed|es|ing)?|without).{0,60}(?:admin|authoriz|access|guard)|(?:admin|authoriz|access|guard).{0,60}(?:removed|deleted|missing|absent|bypass(?:ed|es|ing)?|without)/i}),
+    oraclePattern:/(?:removed|removal|deleted|deletion|missing|absent|bypass(?:ed|es|ing)?|without).{0,60}(?:admin|authoriz|access|guard)|(?:admin|authoriz|access|guard).{0,60}(?:removed|removal|deleted|deletion|missing|absent|bypass(?:ed|es|ing)?|without)/i}),
   // Legitimate OLD-side deletion that must not cause a blocking false alert.
   Object.freeze({label:'removed inert diagnostic logging',
     path:'src/diagnostic-synthetic.mjs',
     before:'console.debug("entered validation");',source:null,deletionOnly:true,
     knownStaticBlocker:false,knownSemanticBug:false})
 ]);
+const HOLDOUT_FIXTURES=Object.freeze([FIXTURES[0],
+  ...HOLDOUT_SEMANTIC_FIXTURES.slice(0,3),FIXTURES[4],
+  ...HOLDOUT_SEMANTIC_FIXTURES.slice(3)]);
+// Fixed PUBLIC synthetic-only oracle; do not use it to score real private PRs.
+export function scoreFixedSyntheticOracle(label,explanation){
+  if(typeof label!=='string'||typeof explanation!=='string'||explanation.length>65536)return false;
+  // A statement that denies removal of an authorization guard cannot earn credit.
+  if(label==='deleted authorization guard without replacement'&&
+     /\b(?:no|not|never)\b.{0,75}\b(?:check|guard)\b.{0,25}\b(?:removed|deleted|bypassed)\b/i.test(explanation))return false;
+  const fixture=FIXTURES.find(f=>f.label===label)||
+    HOLDOUT_FIXTURES.find(f=>f.label===label);
+  return Boolean(fixture?.knownSemanticBug&&fixture.oraclePattern.test(explanation));
+}
 function deny(code){throw Error(code);}
 // Whitelisted diagnostic codes only. NEVER echo arbitrary model/API errors.
 export function safeBenchmarkErrorCode(error){
@@ -161,15 +176,21 @@ async function boundedJson(response) {
  * Uses existing fail-closed review modules; NEVER grants independence or PASS.
  */
 export async function runSyntheticLocalOllamaBenchmark({
-  fetchImpl=fetch,model='qwen2.5-coder:7b'
+  fetchImpl=fetch,model='qwen2.5-coder:7b',fixtureSet='reference'
 }={}) {
   if(typeof fetchImpl!=='function')deny('OLLAMA_BENCHMARK_FETCH_MISSING');
+  if(!['reference','holdout'].includes(fixtureSet))deny('OLLAMA_BENCHMARK_UNSUPPORTED_FIXTURES');
+  const fixtures=fixtureSet==='holdout'?HOLDOUT_FIXTURES:FIXTURES;
   const cases=[];
-  for(const fixture of FIXTURES){
+  const elapsedMilliseconds=[];
+  let totalGeneratedTokens=0,totalEvalNanos=0,validEvalNanos=0;
+  const start=performance.now();
+  for(const fixture of fixtures){
     const bytes=diff(fixture);
     const plan=planFor(bytes);
     const candidate=prepareOfflineOllamaCandidate({
-      plan,model,maxOutputTokens:model==='qwen2.5-coder:1.5b'?512:2048
+      plan,model,maxOutputTokens:model==='qwen2.5-coder:1.5b'?512:2048,
+      syntheticGpuBenchmark:model==='qwen3.6:35b-a3b-coding'
     });
     const staticAudit=runFailOnlyStaticDiffAudit({diffBytes:bytes,runId:RUN});
     if((staticAudit.blockingFindings>0)!==fixture.knownStaticBlocker)
@@ -180,6 +201,7 @@ export async function runSyntheticLocalOllamaBenchmark({
     if(syntheticRequest.keep_alive!==0)deny('OLLAMA_BENCHMARK_UNSAFE_REQUEST');
     syntheticRequest.keep_alive='5m';
     let response;
+    const requestStart=performance.now();
     try{
       response=await fetchImpl(OLLAMA,{
         method:'POST',redirect:'error',cache:'no-store',
@@ -189,11 +211,21 @@ export async function runSyntheticLocalOllamaBenchmark({
       });
     }catch{deny('OLLAMA_BENCHMARK_LOCAL_UNAVAILABLE');}
     const raw=await boundedJson(response);
+    const elapsedMs=Math.max(0,performance.now()-requestStart);
+    elapsedMilliseconds.push(elapsedMs);
+    if(Number.isSafeInteger(raw.eval_count)&&raw.eval_count>=0){
+      totalGeneratedTokens+=raw.eval_count;
+      if(Number.isSafeInteger(raw.eval_duration)&&raw.eval_duration>0){
+        totalEvalNanos+=raw.eval_duration;
+        validEvalNanos++;
+      }
+    }
     const completion=validateOfflineOllamaCompletion({
       response:raw,expectedModel:candidate.model,runId:RUN,
       trustedChangedPaths:plan.changedPaths,
       trustedDiffBytes:bytes,expectedDiffSha256:SHA(bytes),
-      maxPromptTokens:8192,maxCompletionTokens:candidate.maxOutputTokens
+      maxPromptTokens:8192,maxCompletionTokens:candidate.maxOutputTokens,
+      syntheticGpuBenchmark:model==='qwen3.6:35b-a3b-coding'
     });
     const combined=combineReviewerFindings({
       staticReportBytes:staticAudit.reportBytes,
@@ -211,7 +243,7 @@ export async function runSyntheticLocalOllamaBenchmark({
     const modelText=syntheticReport.findings.map(f=>
       (f.message+' '+f.evidence).toLowerCase()).join(' ');
     const semanticOracleHit=fixture.knownSemanticBug &&
-      completion.findingCount>0 && fixture.oraclePattern.test(modelText);
+      completion.findingCount>0 && scoreFixedSyntheticOracle(fixture.label,modelText);
     cases.push(Object.freeze({
       label:fixture.label,seededStaticBlocker:fixture.knownStaticBlocker,
       modelMessages:Object.freeze(modelMessages),
@@ -226,6 +258,21 @@ export async function runSyntheticLocalOllamaBenchmark({
   }
   const semanticBugCases=cases.filter(c=>c.seededSemanticBug);
   const cleanCases=cases.filter(c=>!c.seededStaticBlocker&&!c.seededSemanticBug);
+  const sorted=[...elapsedMilliseconds].sort((a,b)=>a-b);
+  const quantile=q=>Number((sorted[Math.ceil(sorted.length*q)-1]/1000).toFixed(3));
+  const performanceMetrics=Object.freeze({
+    wall_seconds:Number(((performance.now()-start)/1000).toFixed(3)),
+    requests:sorted.length,
+    request_p50_seconds:quantile(.5),
+    request_p95_seconds:quantile(.95),
+    request_max_seconds:quantile(1),
+    ollama_reported_generated_tokens:totalGeneratedTokens,
+    // Null means Ollama omitted eval_duration; never infer a throughput.
+    ollama_reported_tokens_per_second:validEvalNanos===sorted.length && totalEvalNanos>0?
+      Number((totalGeneratedTokens/(totalEvalNanos/1e9)).toFixed(2)):null,
+    gpu_residency_verified:false,
+    private_source_processed:false,
+  });
   const quality=evaluateSyntheticReviewQuality({
     seededSemanticBugs:semanticBugCases.length,
     seededSemanticBugsDetected:semanticBugCases.filter(c=>c.semanticOracleHit).length,
@@ -238,6 +285,8 @@ export async function runSyntheticLocalOllamaBenchmark({
     qualityGate:quality,
     syntheticQualityGatePassed:quality.syntheticQualityGatePassed,
     testsCompleted:cases.length,model,
+    ...(fixtureSet==='holdout'?{fixtureSet:'holdout'}:{}),
+    performanceMetrics,
     seededSemanticBugs:semanticBugCases.length,
     seededSemanticBugsDetected:semanticBugCases.filter(c=>c.semanticOracleHit).length,
     cleanFixtures:cleanCases.length,
@@ -252,20 +301,41 @@ export async function runSyntheticLocalOllamaBenchmark({
     approvalAuthorized:false,publishEvent:null
   });
 }
+/**
+ * Keep the optional fixed PUBLIC GPU modes distinct. The previous 7B mode
+ * was accidentally selected as Qwen 35B by the CLI ternary.
+ * Pure selector: no fetch, no shell, no GPU spending or private diff.
+ */
+export function resolveRunPodGpuSyntheticSelector(flag){
+ if(flag==='--runpod-7b-holdout')
+  return Object.freeze({model:'qwen2.5-coder:7b',fixtureSet:'holdout'});
+ if(flag==='--runpod-35b-holdout')
+  return Object.freeze({model:'qwen3.6:35b-a3b-coding',fixtureSet:'holdout'});
+ if(flag==='--runpod-35b-synthetic')
+  return Object.freeze({model:'qwen3.6:35b-a3b-coding',fixtureSet:'reference'});
+ return null;
+}
+
 // This explicit, operator-run CLI only outputs aggregate synthetic metrics.
 if(process.argv[1] && import.meta.url===pathToFileURL(process.argv[1]).href){
   try {
     if(process.argv.length>3 ||
       (process.argv[2] &&
-        !['--small-synthetic','--large-synthetic','--qwen3-synthetic','--coder-30b-synthetic'].includes(process.argv[2])))
+        !['--small-synthetic','--large-synthetic','--qwen3-synthetic','--qwen35-synthetic','--qwen35-9b-synthetic','--qwen35-9b-holdout','--coder-30b-synthetic','--runpod-35b-synthetic','--runpod-35b-holdout','--runpod-7b-holdout'].includes(process.argv[2])))
       deny('OLLAMA_BENCHMARK_UNSUPPORTED_ARGUMENT');
+    const gpuSelection=resolveRunPodGpuSyntheticSelector(process.argv[2]);
     const model=process.argv[2]==='--small-synthetic'?
       'qwen2.5-coder:1.5b':
       process.argv[2]==='--large-synthetic'?
       'qwen2.5-coder:14b':
       process.argv[2]==='--qwen3-synthetic'? 'qwen3:8b':
-      process.argv[2]==='--coder-30b-synthetic'? 'qwen3-coder:30b':'qwen2.5-coder:7b';
-    const summary=await runSyntheticLocalOllamaBenchmark({model});
+      process.argv[2]==='--qwen35-synthetic'? 'qwen3.5:4b':
+      ['--qwen35-9b-synthetic','--qwen35-9b-holdout'].includes(process.argv[2])? 'qwen3.5:9b':
+      process.argv[2]==='--coder-30b-synthetic'? 'qwen3-coder:30b':
+      gpuSelection?.model ?? 'qwen2.5-coder:7b';
+    const summary=await runSyntheticLocalOllamaBenchmark({model,
+      fixtureSet:gpuSelection?.fixtureSet ??
+       (process.argv[2]==='--qwen35-9b-holdout'?'holdout':'reference')});
     process.stdout.write(JSON.stringify(summary)+'\n');
   }catch(error){
     process.stderr.write('LOCAL_SYNTHETIC_BENCHMARK_BLOCKED:'+safeBenchmarkErrorCode(error)+'\n');
